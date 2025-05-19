@@ -68,6 +68,7 @@ Control RooTasker through AI assistants using the Model Context Protocol (MCP):
 - **Dependency Checks**: Regularly verify and update project dependencies
 - **Codebase Analysis**: Run periodic analysis to identify optimization opportunities
 - **Custom Workflows**: Automate any repetitive development task with natural language instructions
+- **Voice-Powered Automations**: Monitor a folder for new voice transcripts; upon detection, trigger custom Roo Code actions to process the transcript, enabling seamless voice-activated workflows.
 
 ## Usage Tips
 
