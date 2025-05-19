@@ -4,7 +4,6 @@ out
 out-*
 node_modules
 coverage/
-.roomodes
 system-prompt-*
 
 .DS_Store
@@ -37,5 +36,11 @@ logs
 
 # Vite development
 .vite-port
-.roomodes
 squash.sh
+
+# User specified ignores
+backups/
+scripts/backup.js
+.roomodes
+.rootasker/
+.roo/

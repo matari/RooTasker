@@ -20,6 +20,8 @@ import { exportSettings, importSettings } from "../config/importExport"
 import { getWorkspacePath } from "../../utils/path"
 import { Mode, defaultModeSlug, getModeBySlug } from "../../shared/modes"
 import { GlobalState } from "../../schemas"
+import { WatcherService } from "../../services/watchers/WatcherService" // Added
+import { Watcher } from "../../../webview-ui/src/components/watchers/types" // Added
 
 export const webviewMessageHandler = async (provider: any, message: WebviewMessage) => {
 	// Utility functions provided for concise get/update of global state via contextProxy API.
@@ -39,7 +41,7 @@ export const webviewMessageHandler = async (provider: any, message: WebviewMessa
 				const workspaceRoot = getWorkspacePath();
 				if (workspaceRoot) {
 					// Resolve the full path to schedules.json
-					const schedulesFilePath = path.join(workspaceRoot, ".roo", "schedules.json");
+					const schedulesFilePath = path.join(workspaceRoot, ".rootasker", "schedules.json"); // Updated path
 					
 					try {
 						// Read the current schedules file content
@@ -50,7 +52,7 @@ export const webviewMessageHandler = async (provider: any, message: WebviewMessa
 							// Post the content back to the webview
 							provider.postMessageToWebview({
 								type: "fileContent",
-								path: "./.roo/schedules.json",
+								path: "./.rootasker/schedules.json", // Updated path
 								content: fileContent
 							});
 						}
@@ -60,6 +62,40 @@ export const webviewMessageHandler = async (provider: any, message: WebviewMessa
 				}
 			} catch (error) {
 				console.log("Failed to reload schedules and reschedule in extension:", error);
+			}
+			break;
+		}
+		case "runScheduleNow": {
+			if (message.scheduleId) {
+				try {
+					const { SchedulerService } = await import("../../services/scheduler/SchedulerService");
+					const schedulerService = SchedulerService.getInstance(provider.contextProxy.extensionContext);
+					await schedulerService.runScheduleNow(message.scheduleId);
+					// Optionally, send a notification to the webview or log success
+					provider.log(`Successfully triggered "Run Now" for schedule ID: ${message.scheduleId}`);
+				} catch (error) {
+					provider.log(`Error running schedule now: ${error instanceof Error ? error.message : String(error)}`);
+					vscode.window.showErrorMessage(`Failed to run schedule: ${error instanceof Error ? error.message : String(error)}`);
+				}
+			} else {
+				provider.log("runScheduleNow: Missing scheduleId in message");
+			}
+			break;
+		}
+		case "duplicateSchedule": {
+			if (message.scheduleId) {
+				try {
+					const { SchedulerService } = await import("../../services/scheduler/SchedulerService");
+					const schedulerService = SchedulerService.getInstance(provider.contextProxy.extensionContext);
+					await schedulerService.duplicateSchedule(message.scheduleId);
+					// Optionally, send a notification to the webview or log success
+					provider.log(`Successfully duplicated schedule ID: ${message.scheduleId}`);
+				} catch (error) {
+					provider.log(`Error duplicating schedule: ${error instanceof Error ? error.message : String(error)}`);
+					vscode.window.showErrorMessage(`Failed to duplicate schedule: ${error instanceof Error ? error.message : String(error)}`);
+				}
+			} else {
+				provider.log("duplicateSchedule: Missing scheduleId in message");
 			}
 			break;
 		}
@@ -252,8 +288,8 @@ export const webviewMessageHandler = async (provider: any, message: WebviewMessa
 			openImage(message.text!)
 			break
 		case "openFile":
-			// Special handling for schedules.json file
-			if (message.text === "./.roo/schedules.json") {
+			// Special handling for schedules.json and watchers.json files
+			if (message.text === "./.rootasker/schedules.json" || message.text === "./.rootasker/watchers.json") {
 				try {
 					// Get workspace root
 					const workspaceRoot = getWorkspacePath()
@@ -262,14 +298,14 @@ export const webviewMessageHandler = async (provider: any, message: WebviewMessa
 					}
 					
 					// Resolve the full path
-					const fullPath = path.join(workspaceRoot, ".roo", "schedules.json")
+					const fullPath = path.join(workspaceRoot, message.text) // Use message.text directly
 					const uri = vscode.Uri.file(fullPath)
 					
 					// If this is a write operation (has content)
 					if (message.values?.content) {
-						// Ensure the .roo directory exists
-						const rooDir = path.join(workspaceRoot, ".roo")
-						await vscode.workspace.fs.createDirectory(vscode.Uri.file(rooDir))
+						// Ensure the .rootasker directory exists
+						const rooTaskerDir = path.join(workspaceRoot, ".rootasker")
+						await vscode.workspace.fs.createDirectory(vscode.Uri.file(rooTaskerDir))
 						
 						// Write the file content
 						console.log(`Writing to schedules.json: ${message.values.content}`)
@@ -313,30 +349,39 @@ export const webviewMessageHandler = async (provider: any, message: WebviewMessa
 								// Send the content back to the webview
 								provider.postMessageToWebview({
 									type: "fileContent",
-									path: message.text,
+									path: message.text, // e.g., "./.rootasker/schedules.json"
 									content: fileContent
 								})
 							} else {
-								// File doesn't exist, send empty content
+								// File doesn't exist, send empty content structure based on file type
+								const emptyContent = message.text.endsWith("schedules.json") 
+									? JSON.stringify({ schedules: [] }) 
+									: message.text.endsWith("watchers.json") 
+									? JSON.stringify({ watchers: [] })
+									: "{}";
 								provider.postMessageToWebview({
 									type: "fileContent",
 									path: message.text,
-									content: JSON.stringify({ schedules: [] })
+									content: emptyContent
 								})
 							}
 						} catch (readError) {
-							console.error(`Error reading schedules.json: ${readError}`)
-							// Send empty content on error
+							console.error(`Error reading ${message.text}: ${readError}`)
+							const emptyContentOnError = message.text.endsWith("schedules.json") 
+								? JSON.stringify({ schedules: [] }) 
+								: message.text.endsWith("watchers.json") 
+								? JSON.stringify({ watchers: [] })
+								: "{}";
 							provider.postMessageToWebview({
 								type: "fileContent",
 								path: message.text,
-								content: JSON.stringify({ schedules: [] })
+								content: emptyContentOnError
 							})
 						}
 					}
 				} catch (error) {
-					console.error(`Error handling schedules.json: ${error}`)
-					vscode.window.showErrorMessage(`Could not handle schedules.json: ${error instanceof Error ? error.message : String(error)}`)
+					console.error(`Error handling ${message.text}: ${error}`)
+					vscode.window.showErrorMessage(`Could not handle ${message.text}: ${error instanceof Error ? error.message : String(error)}`)
 				}
 			} else {
 				// Default behavior for other files
@@ -920,7 +965,7 @@ case "humanRelayCancel":
 	}
 	break
 
-case "resumeTask":
+		case "resumeTask":
 	if (message.taskId) {
 		try {
 			console.log(`Attempting to resume task with ID: ${message.taskId}`);
@@ -942,8 +987,95 @@ case "resumeTask":
 		console.error("No taskId provided for resumeTask message");
 		vscode.window.showErrorMessage("Cannot resume task: No task ID provided");
 	}
-	break
-
+	break;
+		// Watcher messages
+		case "addWatcher": {
+			if (message.data) {
+				const watcherService = WatcherService.getInstance(provider.contextProxy.extensionContext);
+				await watcherService.addWatcher(message.data as Omit<Watcher, 'id' | 'createdAt' | 'updatedAt'>);
+				// Optionally, notify webview that watchers are updated
+				provider.postMessageToWebview({ type: "watchersUpdated" });
+			}
+			break;
+		}
+		case "updateWatcher": {
+			if (message.watcherId && message.data) {
+				const watcherService = WatcherService.getInstance(provider.contextProxy.extensionContext);
+				await watcherService.updateWatcher(message.watcherId, message.data as Partial<Omit<Watcher, 'id' | 'createdAt'>>);
+				provider.postMessageToWebview({ type: "watchersUpdated" });
+			}
+			break;
+		}
+		case "deleteWatcher": {
+			if (message.watcherId) {
+				const watcherService = WatcherService.getInstance(provider.contextProxy.extensionContext);
+				await watcherService.deleteWatcher(message.watcherId);
+				provider.postMessageToWebview({ type: "watchersUpdated" });
+			}
+			break;
+		}
+		case "toggleWatcherActive": {
+			if (message.watcherId && typeof message.active === "boolean") {
+				const watcherService = WatcherService.getInstance(provider.contextProxy.extensionContext);
+				await watcherService.toggleWatcherActive(message.watcherId, message.active);
+				provider.postMessageToWebview({ type: "watchersUpdated" });
+			}
+			break;
+		}
+		case "duplicateWatcher": {
+			if (message.watcherId) {
+				try {
+					const watcherService = WatcherService.getInstance(provider.contextProxy.extensionContext);
+					await watcherService.duplicateWatcher(message.watcherId);
+					provider.postMessageToWebview({ type: "watchersUpdated" });
+					provider.log(`Successfully duplicated watcher ID: ${message.watcherId}`);
+				} catch (error) {
+					provider.log(`Error duplicating watcher: ${error instanceof Error ? error.message : String(error)}`);
+					vscode.window.showErrorMessage(`Failed to duplicate watcher: ${error instanceof Error ? error.message : String(error)}`);
+				}
+			} else {
+				provider.log("duplicateWatcher: Missing watcherId in message");
+			}
+			break;
+		}
+		case "selectDirectoryForWatcher": {
+			try {
+				const options: vscode.OpenDialogOptions = {
+					canSelectMany: false,
+					openLabel: 'Select Directory for Watcher',
+					canSelectFiles: false,
+					canSelectFolders: true,
+				};
+				const directoryUri = await vscode.window.showOpenDialog(options);
+				if (directoryUri && directoryUri[0]) {
+					provider.postMessageToWebview({ type: "directorySelectedForWatcher", path: directoryUri[0].fsPath });
+				}
+			} catch (error) {
+				provider.log(`Error selecting directory: ${error instanceof Error ? error.message : String(error)}`);
+			}
+			break;
+		}
+		case "watchersUpdated": { // Handle request to reload watchers, similar to schedules
+			try {
+				const watcherService = WatcherService.getInstance(provider.contextProxy.extensionContext);
+				// await watcherService.loadWatchers(); // Assuming WatcherService has a way to reload/refresh its internal list if needed
+				// For now, just re-request the file content to update UI
+				const workspaceRoot = getWorkspacePath();
+				if (workspaceRoot) {
+					const watchersFilePath = path.join(workspaceRoot, ".rootasker", "watchers.json");
+					const fileExists = await fileExistsAtPath(watchersFilePath);
+					if (fileExists) {
+						const fileContent = await fs.readFile(watchersFilePath, 'utf-8');
+						provider.postMessageToWebview({ type: "fileContent", path: "./.rootasker/watchers.json", content: fileContent });
+					} else {
+						provider.postMessageToWebview({ type: "fileContent", path: "./.rootasker/watchers.json", content: JSON.stringify({ watchers: [] }) });
+					}
+				}
+			} catch (error) {
+				console.log("Failed to reload watchers in extension:", error);
+			}
+			break;
+		}
 		
 	}
 }
@@ -951,4 +1083,3 @@ case "resumeTask":
 const generateSystemPrompt = async (provider: any, message: WebviewMessage) => {
 
 }
-	

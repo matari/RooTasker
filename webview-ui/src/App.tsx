@@ -9,12 +9,14 @@ import { vscode } from "./utils/vscode"
 import { telemetryClient } from "./utils/TelemetryClient"
 import { ExtensionStateContextProvider, useExtensionState } from "./context/ExtensionStateContext"
 import SchedulerView from "./components/scheduler/SchedulerView"
+import WatchersView from "./components/watchers/WatchersView" // Added
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs" // Added
 
-type Tab = "settings" | "history" | "mcp" | "prompts" | "chat"
+type MainAppTab = "scheduler" | "watchers"; // New tab type
 
 const App = () => {
-	const { didHydrateState, telemetrySetting, telemetryKey, machineId } =
-		useExtensionState()
+	const { didHydrateState, telemetrySetting, telemetryKey, machineId } = useExtensionState()
+	const [activeMainTab, setActiveMainTab] = useState<MainAppTab>("scheduler");
 
 
 
@@ -32,8 +34,25 @@ const App = () => {
 	}
 
 	return (
-		<SchedulerView onDone={() => {}} />)
-	
+		<div className="flex flex-col h-screen p-2 gap-2"> {/* Added padding and gap for tabs */}
+			<Tabs value={activeMainTab} onValueChange={(value) => setActiveMainTab(value as MainAppTab)} className="flex flex-col flex-grow">
+				<TabsList className="grid w-full grid-cols-2">
+					<TabsTrigger value="scheduler">
+						<span className="codicon codicon-calendar mr-2"></span>Scheduled Tasks
+					</TabsTrigger>
+					<TabsTrigger value="watchers">
+						<span className="codicon codicon-eye mr-2"></span>Watchers
+					</TabsTrigger>
+				</TabsList>
+				<TabsContent value="scheduler" className="flex-grow overflow-auto">
+					<SchedulerView onDone={() => {}} />
+				</TabsContent>
+				<TabsContent value="watchers" className="flex-grow overflow-auto">
+					<WatchersView />
+				</TabsContent>
+			</Tabs>
+		</div>
+	)
 }
 
 const queryClient = new QueryClient()

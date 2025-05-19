@@ -1,56 +1,94 @@
 <div align="center">
-  <img src="https://kylehoskinswebsite.s3.us-east-2.amazonaws.com/RooSchedulerPreview.png?v=2" alt="Roo Scheduler Icon" width="600" />
+  <img src="assets/icons/scheduler-icon.png" alt="RooTasker Icon" width="150" />
 </div>
 
 <div align="center">
-<h1>Roo Scheduler</h1>
+<h1>RooTasker</h1>
 
-<a href="https://marketplace.visualstudio.com/items?itemName=KyleHoskins.roo-scheduler" target="_blank"><img src="https://img.shields.io/badge/Download%20on%20VS%20Marketplace-blue?style=for-the-badge&logo=visualstudiocode&logoColor=white" alt="Download on VS Marketplace"></a>
+<a href="https://marketplace.visualstudio.com/items?itemName=MrMatari.rootasker" target="_blank"><img src="https://img.shields.io/badge/Download%20on%20VS%20Marketplace-blue?style=for-the-badge&logo=visualstudiocode&logoColor=white" alt="Download on VS Marketplace"></a>
 
 </div>
 
-**Roo Scheduler** is a task scheduling extension for VS Code that seamlessly integrates with [Roo Code](https://roocode.com/). It allows you to automate recurring tasks and workflows directly within your development environment.  
-
-This extension was created from a fork of [Roo Code](https://roocode.com/) and designed using similar patterns/components to act as a functional community proof of concept and make it easier to merge if folks might want such a feature in [Roo Code](https://roocode.com/) itself.
+**RooTasker** is a powerful task automation extension for VS Code that seamlessly integrates with [Roo Code](https://roocode.com/). It provides both advanced task scheduling and intelligent file watching capabilities to streamline your development workflow.
 
 ## Key Features
 
-### Flexible Task Scheduling
+### 🕒 Advanced Task Scheduling
 
-- **Time-Based Scheduling**: Schedule tasks to run at specific intervals (minutes, hours, days)
+Schedule tasks to run automatically based on various timing options:
+
+- **One-time Tasks**: Schedule a task for a specific date and time
+- **Interval Tasks**: Configure tasks to run at regular intervals (minutes, hours, days)
+- **Recurring Tasks**: Set up tasks that repeat daily, weekly, monthly, or yearly
+- **Cron-based Tasks**: Use cron expressions for complex, precise scheduling
 - **Day Selection**: Configure tasks to run only on specific days of the week
-- **Start & Expiration Dates**: Set when tasks should begin and automatically expire
-- **Activity-Based Execution**: Optionally run tasks only when there's been user activity since the last execution
+- **Time Windows**: Set start and expiration dates to control when schedules are active
+- **Execution Limits**: Set maximum number of times a task should run
+- **User Activity Awareness**: Optionally run tasks only when there's been user activity
 
-### Task Interaction Options
+### 🔍 File Watching
 
-- **Wait Mode**: Wait for a specified period of inactivity before executing a scheduled task
+Automate responses to file system changes:
+
+- **Directory Monitoring**: Watch specific directories for file changes
+- **File Type Filtering**: Configure watchers to only trigger on specific file types
+- **Custom Prompts**: Define custom instructions for Roo Code when files change
+- **Mode Selection**: Choose which Roo Code mode to use when responding to changes
+
+### ⚙️ Task Execution Options
+
+Fine-tune how tasks interact with your workflow:
+
+- **Wait Mode**: Wait for a specified period of inactivity before executing a task
 - **Interrupt Mode**: Automatically interrupt any running task to execute the scheduled task
 - **Skip Mode**: Skip execution if another task is already running
 
-### Seamless [Roo Code](https://roocode.com/) Integration
+### 🔌 Seamless Roo Code Integration
 
-Roo Scheduler connects with [Roo Code](https://roocode.com/)'s extension points which allow it to:
+RooTasker connects with [Roo Code](https://roocode.com/)'s extension points to:
 
-- Start new tasks in any available [Roo Code](https://roocode.com/) mode
-- Pass custom instructions to [Roo Code](https://roocode.com/) for each scheduled task
-- Provides options to execute after specified inactivity, interrupt existing tasks, or skip execution of a schedule
+- Start new tasks in any available Roo Code mode
+- Pass custom instructions to Roo Code for each task
+- Maintain task history and status tracking
+
+### 🤖 AI Assistant Access
+
+Control RooTasker through AI assistants using the Model Context Protocol (MCP):
+
+- Manage schedules and watchers directly through chat interfaces
+- Create, update, delete, and run tasks programmatically
+- Toggle schedule activation states
+- Get detailed information about your automation setup
 
 ## Use Cases
 
 - **Automated Code Reviews**: Schedule regular code quality checks
+- **Real-time Testing**: Run tests automatically when code files change
 - **Documentation Updates**: Keep documentation in sync with code changes
 - **Dependency Checks**: Regularly verify and update project dependencies
 - **Codebase Analysis**: Run periodic analysis to identify optimization opportunities
-- **Custom Workflows**: Automate any repetitive development task with natural language instructions (tests, memory bank, MCP etc)
+- **Custom Workflows**: Automate any repetitive development task with natural language instructions
 
 ## Usage Tips
 
-- Currently, this extension will not wake up your computer to run a task.  It will run tasks if the screen is locked.  When VS Code “wakes up,” either when a computer starts or another background process is run, then any pending tasks will be run.
-- Intervals are calculated differently depending on if start date time is specified.  For example, for an hourly task, if I have start date/time specified at 10:00am and the execution is delayed until 10:15am due to inactivity interruption delays or the computer being off/asleep, then the next task is scheduled for 11:00am. If I don’t specify start time, the hour interval is calculated from the last execution time, so the next execution will be 11:15am
+- RooTasker will run tasks if your screen is locked, but cannot wake up your computer
+- When VS Code starts or wakes up, any pending tasks will execute
+- For one-time and interval tasks with specific start times, next execution times are calculated from the scheduled time (e.g., 10:00am, 11:00am) regardless of when the previous task actually ran
+- For interval tasks without specific start times, next execution times are calculated from the previous execution time
+- File watchers trigger only when actual changes are detected, not simply when files are accessed
+
+## Getting Started
+
+1. Open the RooTasker panel in VS Code's activity bar
+2. Switch between the "Scheduled Tasks" and "Watchers" tabs
+3. Click "Add Schedule" or "Add Watcher" to create new automations
+4. Configure your automation parameters and save
+5. Monitor task execution in the status list
 
 ## License
 
-[Apache 2.0 © 2025 Roo Scheduler](./LICENSE)
+[Apache 2.0 © 2025 RooTasker](./LICENSE)
 
-Note: This project is maintained by a [Roo Code](https://roocode.com/) fan/contributor rather than the [Roo Code](https://roocode.com/) team.  Feel free to suggest features/ideas/fixes via an issue or [contribute to the project](CONTRIBUTING.md)!
+---
+
+*RooTasker is maintained independently and is not an official product of the Roo Code team.*

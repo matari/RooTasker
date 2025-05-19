@@ -1,0 +1,17 @@
+^<?xml
+version=1.0
+encoding=UTF-8?^>^<svg
+width=24px
+height=24px
+viewBox=0 0 24 24
+version=1.1
+xmlns=http://www.w3.org/2000/svg
+xmlns:xlink=http://www.w3.org/1999/xlink^>^<title^>Recurring
+Icon^</title^>^<g
+stroke=none
+stroke-width=1
+fill=none
+fill-rule=evenodd^>^<path
+d=M12,4 C15.87,4 19,7.13 19,11 L21,11 L17.5,14.5 L14,11 L16,11 C16,8.79 14.21,7 12,7 C9.79,7 8,8.79 8,11 C8,13.21 9.79,15 12,15 C13.09,15 14.09,14.59 14.83,13.85 L17.18,16.2 C15.83,17.54 14,18.35 12,18.35 C8.13,18.35 5,15.22 5,11.35 C5,7.48 8.13,4 12,4 Z
+fill=#000000
+fill-rule=nonzero^>^</path^>^</g^>^</svg^>

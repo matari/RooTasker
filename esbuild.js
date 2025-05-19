@@ -134,9 +134,11 @@ const extensionConfig = {
 		{
 			name: "alias-plugin",
 			setup(build) {
+				// Alias for pkce-challenge
 				build.onResolve({ filter: /^pkce-challenge$/ }, (args) => {
 					return { path: require.resolve("pkce-challenge/dist/index.browser.js") }
-				})
+				});
+				// Removed alias for @modelcontextprotocol/sdk as we'll use direct import paths
 			},
 		},
 	],
@@ -145,7 +147,7 @@ const extensionConfig = {
 	sourcesContent: false,
 	platform: "node",
 	outfile: "dist/extension.js",
-	external: ["vscode"],
+	external: ["vscode"], // @modelcontextprotocol/sdk removed from external to allow bundling via specific path
 }
 
 async function main() {

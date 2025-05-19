@@ -18,8 +18,17 @@
 		"strict": true,
 		"target": "es2022",
 		"useDefineForClassFields": true,
-		"useUnknownInCatchVariables": false
+		"useUnknownInCatchVariables": false,
+		"types": ["node", "vscode"]
 	},
 	"include": ["src/**/*", "scripts/**/*", ".changeset/**/*"],
-	"exclude": ["node_modules", ".vscode-test", "webview-ui"]
+	"exclude": [
+		"node_modules",
+		".vscode-test",
+		"webview-ui",
+		"src/__tests__",
+		"src/__mocks__",
+		"**/*.test.ts", // Also exclude test files by pattern
+		"**/*.spec.ts"  // And spec files
+	]
 }

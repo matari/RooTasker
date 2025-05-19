@@ -12,7 +12,17 @@ export interface WebviewMessage {
 		| "apiConfiguration"
 		| "deleteMultipleTasksWithIds"
 		| "toggleScheduleActive"
+		| "runScheduleNow" // Added for Run Now button
+		| "duplicateSchedule" // Added for duplicate functionality
 		| "schedulesUpdated"
+		| "addWatcher"
+		| "updateWatcher"
+		| "deleteWatcher"
+		| "toggleWatcherActive"
+		| "duplicateWatcher" // Added for duplicate functionality
+		| "watchersUpdated"
+		| "selectDirectoryForWatcher" // Added for watcher form
+		| "directorySelectedForWatcher" // Added for watcher form response
 		| "currentApiConfigName"
 		| "saveApiConfiguration"
 		| "upsertApiConfiguration"
@@ -148,7 +158,10 @@ export interface WebviewMessage {
 	requestId?: string
 	ids?: string[]
 	scheduleId?: string
+	watcherId?: string // Added for watcher operations
 	active?: boolean
+	data?: any // Generic data payload for add/update watcher
+	path?: string // For directorySelectedForWatcher response
 	taskId?: string
 }
 

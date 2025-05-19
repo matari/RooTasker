@@ -1,5 +1,24 @@
 # Changelog
 
+## [1.0.0] - 2025-05-16
+
+### Added
+- Rebranded from Roo Scheduler to RooTasker
+- Added file watcher functionality to monitor directories for changes
+- Implemented MCP server integration for AI assistant control
+- Created tabbed interface for different schedule types (one-time, interval, cron)
+- Added support for file type filtering in watchers
+- Added MCP tools for schedule management (list, create, update, delete, toggle, run)
+
+### Fixed
+- Resolved issues with MCP server SDK integration
+- Updated all tool schemas to be compatible with the latest MCP SDK
+
+### Changed
+- Complete UI overhaul with separate tabs for Schedules and Watchers
+- Updated documentation to reflect new capabilities
+- Improved project structure for better maintainability
+
 ## [0.0.10] - 2025-04-25
 
 ### Fixed

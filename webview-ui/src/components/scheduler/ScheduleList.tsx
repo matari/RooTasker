@@ -8,6 +8,8 @@ type ScheduleListProps = {
   onEdit: (id: string) => void;
   onDelete: (id: string) => void;
   onToggleActive: (id: string, active: boolean) => void;
+  onRunNow: (id: string) => void;
+  onDuplicate: (id: string) => void; // Added for duplicate functionality
   onResumeTask: (taskId: string) => void;
   formatDate: (dateString: string) => string;
 };
@@ -17,6 +19,8 @@ const ScheduleList: React.FC<ScheduleListProps> = ({
   onEdit,
   onDelete,
   onToggleActive,
+  onRunNow,
+  onDuplicate, // Added
   onResumeTask,
   formatDate,
 }) => {
@@ -42,6 +46,8 @@ const ScheduleList: React.FC<ScheduleListProps> = ({
             onEdit={onEdit}
             onDelete={onDelete}
             onToggleActive={onToggleActive}
+            onRunNow={onRunNow}
+            onDuplicate={onDuplicate} // Added
             onResumeTask={onResumeTask}
             formatDate={formatDate}
           />

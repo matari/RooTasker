@@ -19,7 +19,8 @@ const schedules: Schedule[] = [
     mode: "focus",
     modeDisplayName: "Focus",
     taskInstructions: "Do morning tasks",
-    scheduleType: "time",
+    scheduleKind: "interval",
+    cronExpression: undefined,
     timeInterval: "1",
     timeUnit: "day",
     selectedDays: { monday: true, tuesday: false },
@@ -46,7 +47,8 @@ const schedules: Schedule[] = [
     mode: "review",
     modeDisplayName: "Review",
     taskInstructions: "Reflect on the day",
-    scheduleType: "time",
+    scheduleKind: "interval",
+    cronExpression: undefined,
     timeInterval: "1",
     timeUnit: "day",
     selectedDays: { friday: true },
@@ -73,7 +75,8 @@ const schedules: Schedule[] = [
     mode: "focus",
     modeDisplayName: "Focus",
     taskInstructions: "Run after user activity",
-    scheduleType: "time",
+    scheduleKind: "interval",
+    cronExpression: undefined,
     timeInterval: "2",
     timeUnit: "hour",
     selectedDays: { monday: true, wednesday: true, friday: true },
@@ -99,6 +102,8 @@ describe("ScheduleList", () => {
         onEdit={jest.fn()}
         onDelete={jest.fn()}
         onToggleActive={jest.fn()}
+        onRunNow={jest.fn()}
+        onDuplicate={jest.fn()} // Added for duplicate functionality
         onResumeTask={jest.fn()}
         formatDate={formatDate}
       />
@@ -119,6 +124,8 @@ describe("ScheduleList", () => {
         onEdit={jest.fn()}
         onDelete={jest.fn()}
         onToggleActive={jest.fn()}
+        onRunNow={jest.fn()}
+        onDuplicate={jest.fn()} // Added for duplicate functionality
         onResumeTask={jest.fn()}
         formatDate={formatDate}
       />
@@ -136,6 +143,8 @@ describe("ScheduleList", () => {
         onEdit={onEdit}
         onDelete={jest.fn()}
         onToggleActive={jest.fn()}
+        onRunNow={jest.fn()}
+        onDuplicate={jest.fn()} // Added for duplicate functionality
         onResumeTask={jest.fn()}
         formatDate={formatDate}
       />
@@ -152,6 +161,8 @@ describe("ScheduleList", () => {
         onEdit={jest.fn()}
         onDelete={onDelete}
         onToggleActive={jest.fn()}
+        onRunNow={jest.fn()}
+        onDuplicate={jest.fn()} // Added for duplicate functionality
         onResumeTask={jest.fn()}
         formatDate={formatDate}
       />
@@ -169,6 +180,8 @@ describe("ScheduleList", () => {
         onEdit={jest.fn()}
         onDelete={jest.fn()}
         onToggleActive={onToggleActive}
+        onRunNow={jest.fn()}
+        onDuplicate={jest.fn()} // Added for duplicate functionality
         onResumeTask={jest.fn()}
         formatDate={formatDate}
       />
@@ -188,6 +201,8 @@ describe("ScheduleList", () => {
         onEdit={jest.fn()}
         onDelete={jest.fn()}
         onToggleActive={jest.fn()}
+        onRunNow={jest.fn()}
+        onDuplicate={jest.fn()} // Added for duplicate functionality
         onResumeTask={onResumeTask}
         formatDate={formatDate}
       />

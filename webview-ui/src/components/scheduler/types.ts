@@ -4,7 +4,11 @@ export interface Schedule {
   mode: string;
   modeDisplayName?: string;
   taskInstructions: string;
-  scheduleType: string;
+  scheduleKind: "one-time" | "interval" | "cron" | "recurring";
+  recurrenceType?: "daily" | "weekly" | "monthly" | "yearly"; // For recurring schedules
+  recurrenceDay?: number; // Day of month for monthly/yearly recurrence
+  recurrenceMonth?: number; // Month for yearly recurrence
+  cronExpression?: string;
   timeInterval?: string;
   timeUnit?: string;
   selectedDays?: Record<string, boolean>;
@@ -14,6 +18,8 @@ export interface Schedule {
   expirationDate?: string;
   expirationHour?: string;
   expirationMinute?: string;
+  maxExecutions?: number; // Maximum number of times to run
+  executionCount?: number; // Current number of executions
   requireActivity?: boolean;
   active?: boolean; // If undefined, treat as true (backward compatibility)
   taskInteraction?: "wait" | "interrupt" | "skip"; // How to handle when a task is already running

@@ -1,10 +1,16 @@
-# Contributing to Roo Scheduler
+# Contributing to RooTasker
 
-Roo Scheduler is a simple app, but it was built from a Roo Code fork as the starter, so there's plenty of code to ignore.  Feel free to add any features or fixes you think would be useful.
+RooTasker is a VS Code extension for task automation, built as a fork of Roo Code. We welcome contributions that enhance its functionality or fix issues.
 
 You'll find the code for this extension primarily in:
-- src/services/scheduler
-- webview-ui/src/components/scheduler
+- **Scheduler Components**:
+  - `src/services/scheduler`
+  - `webview-ui/src/components/scheduler`
+- **Watcher Components**:
+  - `src/services/watchers`
+  - `webview-ui/src/components/watchers`
+- **MCP Server Integration**:
+  - `src/mcp_server`
 
 ## Join The Roo Code Community
 

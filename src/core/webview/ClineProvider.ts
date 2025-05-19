@@ -48,8 +48,8 @@ export type ClineProviderEvents = {
 }
 
 export class ClineProvider extends EventEmitter<ClineProviderEvents> implements vscode.WebviewViewProvider {
-	public static readonly sideBarId = "roo-scheduler.SidebarProvider" // used in package.json as the view's id. This value cannot be changed due to how vscode caches views based on their id, and updating the id would break existing instances of the extension.
-	public static readonly tabPanelId = "roo-scheduler.TabPanelProvider"
+	public static readonly sideBarId = "rootasker.SidebarProvider" // used in package.json as the view's id. This value cannot be changed due to how vscode caches views based on their id, and updating the id would break existing instances of the extension.
+	public static readonly tabPanelId = "rootasker.TabPanelProvider"
 	private static activeInstances: Set<ClineProvider> = new Set()
 	private disposables: vscode.Disposable[] = []
 	private view?: vscode.WebviewView | vscode.WebviewPanel
@@ -211,7 +211,7 @@ export class ClineProvider extends EventEmitter<ClineProviderEvents> implements 
 
 		// If no visible provider, try to show the sidebar view
 		if (!visibleProvider) {
-			await vscode.commands.executeCommand("roo-scheduler.SidebarProvider.focus")
+			await vscode.commands.executeCommand("rootasker.SidebarProvider.focus")
 			// Wait briefly for the view to become visible
 			await delay(100)
 			visibleProvider = ClineProvider.getVisibleInstance()
@@ -586,7 +586,7 @@ export class ClineProvider extends EventEmitter<ClineProviderEvents> implements 
 					<script nonce="${nonce}">
 						window.IMAGES_BASE_URI = "${imagesUri}"
 					</script>
-					<title>Roo Code</title>
+					<title>RooTasker</title>
 				</head>
 				<body>
 					<div id="root"></div>
@@ -671,7 +671,7 @@ export class ClineProvider extends EventEmitter<ClineProviderEvents> implements 
 			<script nonce="${nonce}">
 				window.IMAGES_BASE_URI = "${imagesUri}"
 			</script>
-            <title>Roo Code</title>
+            <title>RooTasker</title>
           </head>
           <body>
             <noscript>You need to enable JavaScript to run this app.</noscript>
@@ -823,21 +823,21 @@ export class ClineProvider extends EventEmitter<ClineProviderEvents> implements 
 		// Get platform-specific application data directory
 		let mcpServersDir: string
 		if (process.platform === "win32") {
-			// Windows: %APPDATA%\Roo-Code\MCP
-			mcpServersDir = path.join(os.homedir(), "AppData", "Roaming", "Roo-Code", "MCP")
+			// Windows: %APPDATA%\RooTasker\MCP
+			mcpServersDir = path.join(os.homedir(), "AppData", "Roaming", "RooTasker", "MCP")
 		} else if (process.platform === "darwin") {
-			// macOS: ~/Documents/Cline/MCP
-			mcpServersDir = path.join(os.homedir(), "Documents", "Cline", "MCP")
+			// macOS: ~/Documents/RooTasker/MCP
+			mcpServersDir = path.join(os.homedir(), "Documents", "RooTasker", "MCP")
 		} else {
-			// Linux: ~/.local/share/Cline/MCP
-			mcpServersDir = path.join(os.homedir(), ".local", "share", "Roo-Code", "MCP")
+			// Linux: ~/.local/share/RooTasker/MCP
+			mcpServersDir = path.join(os.homedir(), ".local", "share", "RooTasker", "MCP")
 		}
 
 		try {
 			await fs.mkdir(mcpServersDir, { recursive: true })
 		} catch (error) {
 			// Fallback to a relative path if directory creation fails
-			return path.join(os.homedir(), ".roo-code", "mcp")
+			return path.join(os.homedir(), ".rootasker", "mcp")
 		}
 		return mcpServersDir
 	}

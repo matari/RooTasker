@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback, forwardRef, useImperativeHandle, useMemo } from "react"
 import { Button, Input, Badge } from "@/components/ui"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { AutosizeTextarea } from "@/components/ui/autosize-textarea"
 import { ModeConfig } from "../../../../src/shared/modes"
@@ -58,7 +59,11 @@ const getDefinedForm = (initialData?: Partial<ScheduleFormData>): RequiredSchedu
 	name: initialData?.name ?? "",
 	mode: initialData?.mode ?? "code",
 	taskInstructions: initialData?.taskInstructions ?? "",
-	scheduleType: initialData?.scheduleType ?? "time",
+	scheduleKind: initialData?.scheduleKind ?? "interval",
+	recurrenceType: initialData?.recurrenceType ?? "daily",
+	recurrenceDay: initialData?.recurrenceDay ?? 1,
+	recurrenceMonth: initialData?.recurrenceMonth ?? 1,
+	cronExpression: initialData?.cronExpression ?? "",
 	timeInterval: initialData?.timeInterval ?? "1",
 	timeUnit: initialData?.timeUnit ?? "hour",
 	selectedDays: initialData?.selectedDays ?? { ...defaultDays },
@@ -68,6 +73,8 @@ const getDefinedForm = (initialData?: Partial<ScheduleFormData>): RequiredSchedu
 	expirationDate: initialData?.expirationDate ?? "",
 	expirationHour: initialData?.expirationHour ?? "00",
 	expirationMinute: initialData?.expirationMinute ?? "00",
+	maxExecutions: initialData?.maxExecutions ?? 0,
+	executionCount: initialData?.executionCount ?? 0,
 	requireActivity: initialData?.requireActivity ?? false,
 	active: initialData?.active ?? true,
 	taskInteraction: initialData?.taskInteraction ?? "wait",
@@ -80,13 +87,19 @@ const getDefinedForm = (initialData?: Partial<ScheduleFormData>): RequiredSchedu
 
 const ScheduleForm = forwardRef<ScheduleFormHandle, ScheduleFormProps>(
 	({ initialData, isEditing, availableModes, onSave, onCancel, onValidityChange }, ref) => {
+		const [activeScheduleKindTab, setActiveScheduleKindTab] = useState<"one-time" | "interval" | "cron" | "recurring">(
+			initialData?.scheduleKind || "interval",
+		)
+
 		// For new schedules, we'll use allDaysSelected (all true) as the initial state
 		// For editing, use the provided selectedDays or defaultDays
 		const initialFormData =
 			!isEditing && (!initialData || !initialData.selectedDays)
 				? { ...initialData, selectedDays: { ...allDaysSelected } }
 				: initialData
-		const [form, setForm] = useState<RequiredScheduleFormData>(getDefinedForm(initialFormData))
+		const [form, setForm] = useState<RequiredScheduleFormData>(
+			getDefinedForm(initialData ? { ...initialData, scheduleKind: activeScheduleKindTab } : { scheduleKind: activeScheduleKindTab }),
+		)
 		const [hasStartDate, setHasStartDate] = useState<boolean>(!!initialData?.startDate)
 		const [hasExpiration, setHasExpiration] = useState<boolean>(!!initialData?.expirationDate)
 
@@ -100,20 +113,56 @@ const ScheduleForm = forwardRef<ScheduleFormHandle, ScheduleFormProps>(
 		const [hasDaysOfWeek, setHasDaysOfWeek] = useState<boolean>(isEditing ? anyDaysNotSelected : false)
 
 		// Validation state for parent
-		const isValid =
-			!!form.name.trim() &&
-			!!form.mode &&
-			!!form.taskInstructions.trim() &&
-			!!form.timeInterval &&
-			!isNaN(Number(form.timeInterval)) &&
-			Number(form.timeInterval) > 0 &&
-			(form.taskInteraction !== "wait" ||
-				(!!form.inactivityDelay && !isNaN(Number(form.inactivityDelay)) && Number(form.inactivityDelay) > 0))
+		const isValid = useMemo(() => {
+			const baseValid =
+				!!form.name.trim() &&
+				!!form.mode &&
+				!!form.taskInstructions.trim() &&
+				(form.taskInteraction !== "wait" ||
+					(!!form.inactivityDelay && !isNaN(Number(form.inactivityDelay)) && Number(form.inactivityDelay) > 0));
+
+			if (!baseValid) return false;
+
+			switch (form.scheduleKind) {
+				case "one-time":
+					return !!form.startDate && !!form.startHour && !!form.startMinute;
+				case "interval":
+					return !!form.timeInterval && !isNaN(Number(form.timeInterval)) && Number(form.timeInterval) > 0;
+				case "cron":
+					return !!form.cronExpression.trim();
+				case "recurring":
+					// Validate based on recurrence type
+					const timeValid = !!form.startHour && !!form.startMinute;
+					if (!timeValid) return false;
+					
+					switch (form.recurrenceType) {
+						case "daily":
+							return true; // Just needs the time
+						case "weekly":
+							// At least one day must be selected
+							return Object.values(form.selectedDays).some(day => day === true);
+						case "monthly":
+							return form.recurrenceDay >= 1 && form.recurrenceDay <= 31;
+						case "yearly":
+							return form.recurrenceDay >= 1 && form.recurrenceDay <= 31 && 
+								form.recurrenceMonth >= 1 && form.recurrenceMonth <= 12;
+						default:
+							return false;
+					}
+				default:
+					return false;
+			}
+		}, [form]);
 
 		// Notify parent of validity changes
 		useEffect(() => {
 			if (onValidityChange) onValidityChange(isValid)
 		}, [isValid, onValidityChange])
+
+		// Update form's scheduleKind when tab changes
+		useEffect(() => {
+			setField("scheduleKind", activeScheduleKindTab)
+		}, [activeScheduleKindTab])
 
 		// Expose submitForm to parent via ref
 		useImperativeHandle(ref, () => ({
@@ -245,37 +294,93 @@ const ScheduleForm = forwardRef<ScheduleFormHandle, ScheduleFormProps>(
 				return
 			}
 	
-			let formToSave = form
+			let formToSave: ScheduleFormData = { ...form }; // Ensure correct type for onSave
 	
-			// If hasExpiration is false, clear expiration fields
+			// Clear fields based on scheduleKind
+			if (form.scheduleKind === "one-time") {
+				formToSave.cronExpression = undefined;
+				formToSave.timeInterval = undefined;
+				formToSave.timeUnit = undefined;
+				formToSave.selectedDays = { ...defaultDays }; 
+				formToSave.requireActivity = false;
+				formToSave.recurrenceType = undefined;
+				formToSave.recurrenceDay = undefined;
+				formToSave.recurrenceMonth = undefined;
+				// startDate, startHour, startMinute are essential for one-time and are set via DateTimeSelector
+				// Expiration is handled by hasExpiration checkbox
+			} else if (form.scheduleKind === "interval") {
+				formToSave.cronExpression = undefined;
+				formToSave.recurrenceType = undefined;
+				formToSave.recurrenceDay = undefined;
+				formToSave.recurrenceMonth = undefined;
+				// Interval specific fields are managed by their inputs and checkboxes (hasStartDate, hasDaysOfWeek)
+				if (!hasStartDate) {
+					formToSave.startDate = undefined;
+					formToSave.startHour = undefined;
+					formToSave.startMinute = undefined;
+				}
+				if (!hasDaysOfWeek) {
+					formToSave.selectedDays = { ...allDaysSelected }; // Default for interval if not specified
+				}
+			} else if (form.scheduleKind === "cron") {
+				formToSave.timeInterval = undefined;
+				formToSave.timeUnit = undefined;
+				formToSave.selectedDays = { ...defaultDays };
+				formToSave.startDate = undefined; 
+				formToSave.startHour = undefined;
+				formToSave.startMinute = undefined;
+				formToSave.requireActivity = false;
+				formToSave.recurrenceType = undefined;
+				formToSave.recurrenceDay = undefined;
+				formToSave.recurrenceMonth = undefined;
+				// Expiration is handled by hasExpiration checkbox
+			} else if (form.scheduleKind === "recurring") {
+				formToSave.cronExpression = undefined;
+				formToSave.timeInterval = undefined;
+				formToSave.timeUnit = undefined;
+				formToSave.startDate = undefined;
+				formToSave.requireActivity = false;
+				
+				// Clear fields based on recurrence type
+				if (form.recurrenceType === "daily") {
+					formToSave.selectedDays = { ...defaultDays };
+					formToSave.recurrenceDay = undefined;
+					formToSave.recurrenceMonth = undefined;
+				} else if (form.recurrenceType === "weekly") {
+					formToSave.recurrenceDay = undefined;
+					formToSave.recurrenceMonth = undefined;
+					// selectedDays is already set by the UI
+				} else if (form.recurrenceType === "monthly") {
+					formToSave.selectedDays = { ...defaultDays };
+					formToSave.recurrenceMonth = undefined;
+					// recurrenceDay is already set by the UI
+				} else if (form.recurrenceType === "yearly") {
+					formToSave.selectedDays = { ...defaultDays };
+					// recurrenceDay and recurrenceMonth are already set by the UI
+				}
+				
+				// Set executionCount to 0 if maxExecutions is enabled
+				if (!formToSave.maxExecutions || formToSave.maxExecutions <= 0) {
+					formToSave.maxExecutions = undefined;
+					formToSave.executionCount = undefined;
+				} else {
+					formToSave.executionCount = 0; // Start with 0 executions
+				}
+			}
+
+			// If hasExpiration is false, clear expiration fields (applies to all types if used)
 			if (!hasExpiration) {
-				formToSave = {
-					...formToSave,
-					expirationDate: "",
-					expirationHour: "00",
-					expirationMinute: "00",
-				}
+				formToSave.expirationDate = undefined;
+				formToSave.expirationHour = undefined;
+				formToSave.expirationMinute = undefined;
 			}
 	
-			// If hasStartDate is false, clear start date fields
-			if (!hasStartDate) {
-				formToSave = {
-					...formToSave,
-					startDate: "",
-					startHour: "",
-					startMinute: "00",
-				}
-			}
+			// Note: The `hasStartDate` checkbox primarily controls visibility for interval schedules.
+			// For "one-time", startDate/Hour/Minute are directly part of its configuration.
+			// For "cron", they are not used.
+			// The logic above for each scheduleKind should correctly nullify them if not applicable.
 	
-			// If hasDaysOfWeek is false, set all days to be selected
-			if (!hasDaysOfWeek) {
-				formToSave = {
-					...formToSave,
-					selectedDays: { ...allDaysSelected },
-				}
-			}
-	
-			onSave(formToSave)
+			onSave(formToSave);
 		}
 
 		return (
@@ -328,24 +433,46 @@ const ScheduleForm = forwardRef<ScheduleFormHandle, ScheduleFormProps>(
 					</div>
 				</div>
 				<div className="flex flex-col gap-3">
-					{false && (
-						<div className="flex flex-col gap-2">
-							<label className="text-vscode-descriptionForeground text-sm">Schedule Type</label>
-							<Select value={form.scheduleType} onValueChange={(v) => setField("scheduleType", v)}>
-								<SelectTrigger className="w-full bg-vscode-dropdown-background !bg-vscode-dropdown-background hover:!bg-vscode-dropdown-background border border-vscode-dropdown-border">
-									<SelectValue placeholder="Select a schedule type" />
-								</SelectTrigger>
-								<SelectContent>
-									<SelectItem value="time">Time Schedule</SelectItem>
-									<SelectItem value="completion">After Task Completion</SelectItem>
-								</SelectContent>
-							</Select>
-						</div>
-					)}
-					{form.scheduleType === "time" && (
-						<div className="flex flex-col gap-3 mt-2">
-							<div className="flex items-center gap-2">
-								<label className="text-vscode-descriptionForeground text-sm">
+				<Tabs value={activeScheduleKindTab} onValueChange={(value) => setActiveScheduleKindTab(value as "one-time" | "interval" | "cron" | "recurring")} className="w-full">
+						<TabsList className="grid w-full grid-cols-4">
+							<TabsTrigger value="one-time">
+								<span className="codicon codicon-rocket mr-1"></span>
+								One-time
+							</TabsTrigger>
+							<TabsTrigger value="recurring">
+								<span className="codicon codicon-sync mr-1"></span>
+								Recurring
+							</TabsTrigger>
+							<TabsTrigger value="interval">
+								<span className="codicon codicon-clock mr-1"></span>
+								Interval
+							</TabsTrigger>
+							<TabsTrigger value="cron">
+								<span className="codicon codicon-gear mr-1"></span>
+								Cron
+							</TabsTrigger>
+						</TabsList>
+						<TabsContent value="one-time" className="mt-4">
+							{/* Fields for one-time schedule will go here */}
+							<p className="text-vscode-descriptionForeground">Configure one-time execution details.</p>
+							<DateTimeSelector
+								label="Execution Time"
+								date={form.startDate} // Re-purpose startDate for one-time
+								hour={form.startHour}   // Re-purpose startHour
+								minute={form.startMinute} // Re-purpose startMinute
+								setDate={(v) => setField("startDate", v)}
+								setHour={(v) => setField("startHour", v)}
+								setMinute={(v) => setField("startMinute", v)}
+								dateAriaLabel="Execution date"
+								hourAriaLabel="Execution hour"
+								minuteAriaLabel="Execution minute"
+							/>
+						</TabsContent>
+						<TabsContent value="interval" className="mt-4">
+							{form.scheduleKind === "interval" && ( // Keep this check for conditional rendering within the tab
+								<div className="flex flex-col gap-3">
+									<div className="flex items-center gap-2">
+										<label className="text-vscode-descriptionForeground text-sm">
 									Every
 									<span className="text-red-500 ml-0.5">*</span>
 								</label>
@@ -539,8 +666,233 @@ const ScheduleForm = forwardRef<ScheduleFormHandle, ScheduleFormProps>(
 									/>
 								</div>
 							)}
-						</div>
-					)}
+								</div>
+							)}
+						</TabsContent>
+						<TabsContent value="cron" className="mt-4">
+							{/* Fields for cron schedule will go here */}
+							<p className="text-vscode-descriptionForeground">Configure cron expression.</p>
+							<LabeledInput
+								label="Cron Expression"
+								required={form.scheduleKind === "cron"}
+								className="w-full"
+								placeholder="* * * * *"
+								value={form.cronExpression}
+								onChange={(e) => setField("cronExpression", e.target.value)}
+							/>
+						</TabsContent>
+						<TabsContent value="recurring" className="mt-4">
+							{form.scheduleKind === "recurring" && (
+								<div className="flex flex-col gap-4">
+									<p className="text-vscode-descriptionForeground">Configure recurring schedule details.</p>
+									
+									<div className="flex flex-col gap-2">
+										<label className="text-vscode-descriptionForeground text-sm">
+											Recurrence Type
+											<span className="text-red-500 ml-0.5">*</span>
+										</label>
+										<Select 
+											value={form.recurrenceType} 
+											onValueChange={(v: "daily" | "weekly" | "monthly" | "yearly") => setField("recurrenceType", v)}
+										>
+											<SelectTrigger className="w-full bg-vscode-dropdown-background !bg-vscode-dropdown-background hover:!bg-vscode-dropdown-background border border-vscode-dropdown-border">
+												<SelectValue placeholder="Select recurrence type" />
+											</SelectTrigger>
+											<SelectContent>
+												<SelectItem value="daily">Daily</SelectItem>
+												<SelectItem value="weekly">Weekly</SelectItem>
+												<SelectItem value="monthly">Monthly</SelectItem>
+												<SelectItem value="yearly">Yearly</SelectItem>
+											</SelectContent>
+										</Select>
+									</div>
+
+									{form.recurrenceType === "weekly" && (
+										<div className="flex flex-col gap-2 p-3 bg-vscode-editor-background border border-vscode-panel-border rounded">
+											<label className="text-vscode-descriptionForeground text-sm">
+												Day of the Week
+											</label>
+											<DaySelector selectedDays={form.selectedDays} toggleDay={toggleDay} />
+										</div>
+									)}
+
+									{(form.recurrenceType === "monthly" || form.recurrenceType === "yearly") && (
+										<div className="flex flex-col gap-2">
+											<label className="text-vscode-descriptionForeground text-sm">
+												Day of Month
+												<span className="text-red-500 ml-0.5">*</span>
+											</label>
+											<Input
+												type="number"
+												min="1"
+												max="31"
+												className="w-full"
+												value={form.recurrenceDay}
+												onChange={(e) => {
+													const value = parseInt(e.target.value)
+													if (!isNaN(value) && value >= 1 && value <= 31) {
+														setField("recurrenceDay", value)
+													}
+												}}
+												aria-label="Day of month"
+											/>
+										</div>
+									)}
+
+									{form.recurrenceType === "yearly" && (
+										<div className="flex flex-col gap-2">
+											<label className="text-vscode-descriptionForeground text-sm">
+												Month
+												<span className="text-red-500 ml-0.5">*</span>
+											</label>
+											<Select 
+												value={form.recurrenceMonth.toString()} 
+												onValueChange={(v) => setField("recurrenceMonth", parseInt(v))}
+											>
+												<SelectTrigger className="w-full bg-vscode-dropdown-background !bg-vscode-dropdown-background hover:!bg-vscode-dropdown-background border border-vscode-dropdown-border">
+													<SelectValue placeholder="Select month" />
+												</SelectTrigger>
+												<SelectContent>
+													<SelectItem value="1">January</SelectItem>
+													<SelectItem value="2">February</SelectItem>
+													<SelectItem value="3">March</SelectItem>
+													<SelectItem value="4">April</SelectItem>
+													<SelectItem value="5">May</SelectItem>
+													<SelectItem value="6">June</SelectItem>
+													<SelectItem value="7">July</SelectItem>
+													<SelectItem value="8">August</SelectItem>
+													<SelectItem value="9">September</SelectItem>
+													<SelectItem value="10">October</SelectItem>
+													<SelectItem value="11">November</SelectItem>
+													<SelectItem value="12">December</SelectItem>
+												</SelectContent>
+											</Select>
+										</div>
+									)}
+
+									<div className="flex flex-col gap-2">
+										<label className="text-vscode-descriptionForeground text-sm">
+											Time of Day
+											<span className="text-red-500 ml-0.5">*</span>
+										</label>
+										<div className="flex items-center gap-2">
+											<Input
+												type="number"
+												min="0"
+												max="23"
+												className="w-20"
+												value={form.startHour}
+												onChange={(e) => {
+													const value = parseInt(e.target.value)
+													if (!isNaN(value) && value >= 0 && value <= 23) {
+														setField("startHour", value.toString().padStart(2, "0"))
+													}
+												}}
+												aria-label="Hour"
+											/>
+											<span>:</span>
+											<Input
+												type="number"
+												min="0"
+												max="59"
+												className="w-20"
+												value={form.startMinute}
+												onChange={(e) => {
+													const value = parseInt(e.target.value)
+													if (!isNaN(value) && value >= 0 && value <= 59) {
+														setField("startMinute", value.toString().padStart(2, "0"))
+													}
+												}}
+												aria-label="Minute"
+											/>
+										</div>
+									</div>
+
+									<div className="flex flex-col gap-2 p-3 bg-vscode-editor-background border border-vscode-panel-border rounded">
+										<div className="flex items-center gap-2">
+											<Checkbox
+												checked={form.maxExecutions > 0}
+												onChange={(checked) => {
+													setField("maxExecutions", checked ? 1 : 0)
+												}}
+												label="Limit number of executions"
+												aria-label="Limit number of executions"
+												className="mb-0"
+											/>
+										</div>
+
+										{form.maxExecutions > 0 && (
+											<div className="flex flex-col gap-2 mt-2">
+												<label className="text-vscode-descriptionForeground text-sm">
+													Maximum executions
+													<span className="text-red-500 ml-0.5">*</span>
+												</label>
+												<Input
+													type="number"
+													min="1"
+													className="w-full"
+													value={form.maxExecutions}
+													onChange={(e) => {
+														const value = parseInt(e.target.value)
+														if (!isNaN(value) && value > 0) {
+															setField("maxExecutions", value)
+														}
+													}}
+													aria-label="Maximum executions"
+												/>
+											</div>
+										)}
+									</div>
+
+									<div className="flex flex-col gap-2 p-3 bg-vscode-editor-background border border-vscode-panel-border rounded">
+										<Checkbox
+											checked={hasExpiration}
+											onChange={(newHasExpiration) => {
+												setHasExpiration(newHasExpiration)
+												// If enabling expiration, set a future date
+												if (newHasExpiration) {
+													const expirationTime = new Date()
+													expirationTime.setMonth(expirationTime.getMonth() + 1)
+
+													// Format date in local time zone (YYYY-MM-DD)
+													const year = expirationTime.getFullYear()
+													const month = (expirationTime.getMonth() + 1).toString().padStart(2, "0")
+													const day = expirationTime.getDate().toString().padStart(2, "0")
+													const expirationDateFormatted = `${year}-${month}-${day}`
+
+													// Format hour and minute
+													const hour = expirationTime.getHours().toString().padStart(2, "0")
+													const minute = expirationTime.getMinutes().toString().padStart(2, "0")
+
+													setField("expirationDate", expirationDateFormatted)
+													setField("expirationHour", hour)
+													setField("expirationMinute", minute)
+												}
+											}}
+											label="Has an expiration date?"
+											aria-label="Has an expiration date"
+											className="mb-0"
+										/>
+
+										{hasExpiration && (
+											<DateTimeSelector
+												label="Expires"
+												date={form.expirationDate}
+												hour={form.expirationHour}
+												minute={form.expirationMinute}
+												setDate={(v) => setField("expirationDate", v)}
+												setHour={(v) => setField("expirationHour", v)}
+												setMinute={(v) => setField("expirationMinute", v)}
+												dateAriaLabel="Expiration date"
+												hourAriaLabel="Expiration hour"
+												minuteAriaLabel="Expiration minute"
+											/>
+										)}
+									</div>
+								</div>
+							)}
+						</TabsContent>
+					</Tabs>
 				</div>
 				<div className="flex justify-end mt-6 gap-3">
 					<Button variant="secondary" onClick={onCancel}>

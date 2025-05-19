@@ -97,7 +97,7 @@ const SchedulerView = ({ onDone }: SchedulerViewProps) => {
 			const message = event.data;
 			
 			// Check if this is a response with file content
-			if (message.type === "fileContent" && message.path === "./.roo/schedules.json") {
+			if (message.type === "fileContent" && message.path === "./.rootasker/schedules.json") {
 				try {
 					const data = JSON.parse(message.content);
 					if (data && Array.isArray(data.schedules)) {
@@ -134,7 +134,7 @@ const SchedulerView = ({ onDone }: SchedulerViewProps) => {
 			// Request the schedules file content from the extension
 			vscode.postMessage({
 				type: "openFile",
-				text: "./.roo/schedules.json",
+				text: "./.rootasker/schedules.json",
 				values: { open: false }
 			})
 			
@@ -195,7 +195,7 @@ const SchedulerView = ({ onDone }: SchedulerViewProps) => {
 		// This ensures the file is written before the backend tries to read it
 		vscode.postMessage({
 		  type: "openFile",
-		  text: "./.roo/schedules.json",
+		  text: "./.rootasker/schedules.json",
 		  values: {
 		    create: true,
 		    content: fileContent,
@@ -219,7 +219,8 @@ const SchedulerView = ({ onDone }: SchedulerViewProps) => {
 				name: schedule.name,
 				mode: schedule.mode,
 				taskInstructions: schedule.taskInstructions,
-				scheduleType: schedule.scheduleType,
+				scheduleKind: schedule.scheduleKind,
+				cronExpression: schedule.cronExpression,
 				timeInterval: schedule.timeInterval,
 				timeUnit: schedule.timeUnit,
 				selectedDays: schedule.selectedDays,
@@ -257,7 +258,7 @@ const SchedulerView = ({ onDone }: SchedulerViewProps) => {
 		// Then save to file with callback to reload schedules
 		vscode.postMessage({
 		  type: "openFile",
-		  text: "./.roo/schedules.json",
+		  text: "./.rootasker/schedules.json",
 		  values: {
 		    create: true,
 		    content: fileContent,
@@ -284,44 +285,52 @@ const SchedulerView = ({ onDone }: SchedulerViewProps) => {
 		setActiveTab("edit")
 	}
 	// Validation is now handled in ScheduleForm
+
+	const onRunNowHandler = (scheduleId: string) => {
+		vscode.postMessage({
+			type: "runScheduleNow",
+			scheduleId: scheduleId,
+		});
+	};
 	
 	// (Sorting logic and helper moved to ScheduleSortControl)
 
 	return (
-		<Tab>
-			<TabHeader className="flex justify-between items-center">
-				<h3 className="text-vscode-foreground m-0">{'Scheduler' /* t("scheduler:title")*/}</h3>
+		<div className="h-full flex flex-col"> {/* Replaced Tab with a div */}
+			{/* Header-like section for buttons, moved inside */}
+			<div className="flex justify-end items-center p-1 border-b border-vscode-panel-border mb-2">
 				{activeTab === "edit" ? (
 					<div className="flex gap-2">
 						<Button
 							variant="secondary"
+							size="sm"
 							onClick={() => {
 								resetForm();
 								setActiveTab("schedules");
 							}}
-							data-testid="toggle-active-button"
+							data-testid="cancel-edit-schedule-button"
 						>
 							Cancel
 						</Button>
 						<Button
+							size="sm"
 							onClick={() => {
 								scheduleFormRef.current?.submitForm();
 							}}
 							disabled={!isFormValid}
-							data-testid="header-save-button"
+							data-testid="save-schedule-button"
 						>
-							Save
+							Save Schedule
 						</Button>
 					</div>
 				) : (
-					<Button onClick={createNewSchedule}>Create New Schedule</Button>
+					<Button size="sm" onClick={createNewSchedule} data-testid="create-new-schedule-button">Add Task</Button>
 				)}
-			</TabHeader>
+			</div>
 			
-			<TabContent className="h-full flex flex-col">
-				<Tabs value={activeTab} onValueChange={setActiveTab} className="w-full h-full flex flex-col">
-
-					<TabsContent value="schedules" className="space-y-2 flex-1">
+			{/* Inner Tabs for list/edit form */}
+			<Tabs value={activeTab} onValueChange={setActiveTab} className="w-full h-full flex flex-col flex-grow">
+				<TabsContent value="schedules" className="space-y-2 flex-1 overflow-auto">
 						{schedules.length === 0 ? (
 							<div className="text-center py-8 text-vscode-descriptionForeground">
 								No schedules found. Create your first schedule to get started.
@@ -362,13 +371,21 @@ const SchedulerView = ({ onDone }: SchedulerViewProps) => {
 												// Then save to file with callback to reload schedules
 												vscode.postMessage({
 													type: "openFile",
-													text: "./.roo/schedules.json",
+													text: "./.rootasker/schedules.json",
 													values: {
 														create: true,
 														content: fileContent,
 														callback: "schedulesUpdated"
 													}
 												});
+											}}
+											onRunNow={onRunNowHandler}
+											onDuplicate={(scheduleId) => {
+												vscode.postMessage({
+													type: "duplicateSchedule",
+													scheduleId: scheduleId,
+												});
+												// The webview message handler will update the file and trigger a refresh
 											}}
 											onResumeTask={(taskId) => {
 												console.log("Sending resumeTask message to extension");
@@ -400,9 +417,7 @@ const SchedulerView = ({ onDone }: SchedulerViewProps) => {
 						/>
 					</TabsContent>
 				</Tabs>
-			</TabContent>
-
-			{/* Confirmation Dialog for Schedule Deletion */}
+			{/* Confirmation Dialog for Schedule Deletion, moved to be a sibling of Tabs */}
 			<ConfirmationDialog
 				open={dialogOpen}
 				onOpenChange={setDialogOpen}
@@ -418,7 +433,7 @@ const SchedulerView = ({ onDone }: SchedulerViewProps) => {
 				}}
 				confirmClassName="bg-vscode-errorForeground hover:bg-vscode-errorForeground/90"
 			/>
-		</Tab>
+		</div>
 	)
 }
 
