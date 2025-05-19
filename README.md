@@ -85,6 +85,10 @@ Control RooTasker through AI assistants using the Model Context Protocol (MCP):
 4. Configure your automation parameters and save
 5. Monitor task execution in the status list
 
+## Acknowledgements
+
+This project was originally forked from [kyle-apex/roo-scheduler](https://github.com/kyle-apex/roo-scheduler). We extend our gratitude to the original authors for their foundational work.
+
 ## License
 
 [Apache 2.0 © 2025 RooTasker](./LICENSE)
