@@ -3,8 +3,8 @@
 	"displayName": "RooTasker",
 	"description": "Advanced task automation for Roo Code with scheduling, file watching, and AI agent control via MCP",
 	"publisher": "MrMatari",
-	"version": "0.0.10",
-	"icon": "assets/icons/scheduler-icon.png",
+	"version": "1.1.0",
+	"icon": "assets/icons/icon.png",
 	"galleryBanner": {
 		"color": "#617A91",
 		"theme": "dark"
@@ -18,9 +18,9 @@
 	},
 	"repository": {
 		"type": "git",
-		"url": "https://github.com/kyle-apex/roo-scheduler"
+		"url": "https://github.com/matari/RooTasker"
 	},
-	"homepage": "https://github.com/kyle-apex/roo-scheduler",
+	"homepage": "https://github.com/matari/RooTasker",
 	"categories": [
 		"AI",
 		"Chat",
@@ -63,7 +63,7 @@
 				{
 					"id": "rootasker-ActivityBar",
 					"title": "RooTasker",
-					"icon": "assets/icons/scheduler-icon.svg"
+					"icon": "assets/icons/RooTasker_dark.png"
 				}
 			]
 		},
@@ -87,8 +87,8 @@
 				"command": "rootasker.openRooClineExtension",
 				"title": "Open Roo Code Extension",
 				"icon": {
-					"light": "assets/icons/roo-icon-black.svg",
-					"dark": "assets/icons/roo-icon-white.svg"
+					"light": "assets/icons/RooTasker_dark.png",
+					"dark": "assets/icons/RooTasker_lite.png"
 				}
 			}
 		],

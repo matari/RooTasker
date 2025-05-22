@@ -20,8 +20,9 @@ import { exportSettings, importSettings } from "../config/importExport"
 import { getWorkspacePath } from "../../utils/path"
 import { Mode, defaultModeSlug, getModeBySlug } from "../../shared/modes"
 import { GlobalState } from "../../schemas"
-import { WatcherService } from "../../services/watchers/WatcherService" // Added
-import { Watcher } from "../../../webview-ui/src/components/watchers/types" // Added
+import { WatcherService } from "../../services/watchers/WatcherService"
+import { Watcher } from "../../../webview-ui/src/components/watchers/types"
+import { Project, BaseSchedule, BaseWatcher } from "../../shared/ProjectTypes";
 
 export const webviewMessageHandler = async (provider: any, message: WebviewMessage) => {
 	// Utility functions provided for concise get/update of global state via contextProxy API.
@@ -68,11 +69,42 @@ export const webviewMessageHandler = async (provider: any, message: WebviewMessa
 		case "runScheduleNow": {
 			if (message.scheduleId) {
 				try {
-					const { SchedulerService } = await import("../../services/scheduler/SchedulerService");
-					const schedulerService = SchedulerService.getInstance(provider.contextProxy.extensionContext);
-					await schedulerService.runScheduleNow(message.scheduleId);
-					// Optionally, send a notification to the webview or log success
-					provider.log(`Successfully triggered "Run Now" for schedule ID: ${message.scheduleId}`);
+					if (message.projectId) {
+						// This is a project schedule
+						provider.log(`Running project schedule: ${message.scheduleId} in project ${message.projectId}`);
+						
+						// Ensure projectStorageService is available on the provider
+						if (!provider.projectStorageService) {
+							throw new Error("ProjectStorageService is not available on the provider.");
+						}
+						
+						const projectSchedules: BaseSchedule[] = await provider.projectStorageService.getSchedulesForProject(message.projectId);
+						const scheduleToRun = projectSchedules.find((s: BaseSchedule) => s.id === message.scheduleId);
+						
+						if (scheduleToRun) {
+							// Import SchedulerService for running the schedule's task
+							const { SchedulerService } = await import("../../services/scheduler/SchedulerService");
+							const schedulerService = SchedulerService.getInstance(provider.contextProxy.extensionContext);
+							
+							// Use a method in SchedulerService that can process a task given its details
+							// Assuming SchedulerService has a method like `processTask` or similar
+							// that takes mode and taskInstructions.
+							// We need to ensure this method exists and is suitable.
+							// For now, let's assume `processTask` is public or we add a new public method.
+							// The `processTask` method is private, so we'll use `runProjectSchedule` as planned.
+							await schedulerService.runProjectSchedule(scheduleToRun);
+							
+							provider.log(`Successfully triggered "Run Now" for project schedule ID: ${message.scheduleId} in project: ${message.projectId}`);
+						} else {
+							throw new Error(`Schedule with ID ${message.scheduleId} not found in project ${message.projectId}`);
+						}
+					} else {
+						// This is a standalone schedule (legacy or non-project context)
+						const { SchedulerService } = await import("../../services/scheduler/SchedulerService");
+						const schedulerService = SchedulerService.getInstance(provider.contextProxy.extensionContext);
+						await schedulerService.runScheduleNow(message.scheduleId); // Existing method for standalone
+						provider.log(`Successfully triggered "Run Now" for standalone schedule ID: ${message.scheduleId}`);
+					}
 				} catch (error) {
 					provider.log(`Error running schedule now: ${error instanceof Error ? error.message : String(error)}`);
 					vscode.window.showErrorMessage(`Failed to run schedule: ${error instanceof Error ? error.message : String(error)}`);
@@ -1076,7 +1108,88 @@ case "humanRelayCancel":
 			}
 			break;
 		}
-		
+		// Project CRUD operations
+		case "createProject":
+			if (message.data) {
+				await provider.projectStorageService.addProject(message.data as Omit<Project, 'id' | 'createdAt' | 'updatedAt'>);
+				await provider.postStateToWebview();
+			}
+			break;
+		case "updateProject":
+			if (message.data) {
+				await provider.projectStorageService.updateProject(message.data as Project);
+				await provider.postStateToWebview();
+			}
+			break;
+		case "deleteProject":
+			if (message.projectId) {
+				await provider.projectStorageService.deleteProject(message.projectId);
+				// If the deleted project was active, clear activeProjectId
+				const activeProjectId = getGlobalState("activeProjectId");
+				if (activeProjectId === message.projectId) {
+					await updateGlobalState("activeProjectId", null);
+				}
+				await provider.postStateToWebview();
+			}
+			break;
+		case "setActiveProject":
+			// message.projectId can be string or null
+			await updateGlobalState("activeProjectId", message.projectId || null);
+			await provider.postStateToWebview();
+			break;
+		case "addScheduleToProject":
+			if (message.projectId && message.data) {
+				await provider.projectStorageService.addScheduleToProject(message.projectId, message.data as Omit<BaseSchedule, 'id' | 'projectId' | 'createdAt' | 'updatedAt'>);
+				await provider.postStateToWebview();
+			}
+			break;
+		case "updateScheduleInProject":
+			if (message.projectId && message.data) {
+				await provider.projectStorageService.updateScheduleInProject(message.projectId, message.data as BaseSchedule);
+				await provider.postStateToWebview();
+			}
+			break;
+		case "deleteScheduleFromProject":
+			if (message.projectId && message.scheduleId) {
+				await provider.projectStorageService.deleteScheduleFromProject(message.projectId, message.scheduleId);
+				await provider.postStateToWebview();
+			}
+			break;
+		case "addWatcherToProject":
+			if (message.projectId && message.data) {
+				await provider.projectStorageService.addWatcherToProject(message.projectId, message.data as Omit<BaseWatcher, 'id' | 'projectId' | 'createdAt' | 'updatedAt'>);
+				await provider.postStateToWebview();
+			}
+			break;
+		case "updateWatcherInProject":
+			if (message.projectId && message.data) {
+				await provider.projectStorageService.updateWatcherInProject(message.projectId, message.data as BaseWatcher);
+				await provider.postStateToWebview();
+			}
+			break;
+		case "deleteWatcherFromProject":
+			if (message.projectId && message.watcherId) {
+				await provider.projectStorageService.deleteWatcherFromProject(message.projectId, message.watcherId);
+				await provider.postStateToWebview();
+			}
+			break;
+		case "selectProjectDirectory":
+			try {
+				const options: vscode.OpenDialogOptions = {
+					canSelectMany: false,
+					openLabel: 'Select Project Directory',
+					canSelectFiles: false,
+					canSelectFolders: true,
+				};
+				const directoryUri = await vscode.window.showOpenDialog(options);
+				if (directoryUri && directoryUri[0]) {
+					provider.postMessageToWebview({ type: "projectDirectorySelected", path: directoryUri[0].fsPath });
+				}
+			} catch (error) {
+				provider.log(`Error selecting project directory: ${error instanceof Error ? error.message : String(error)}`);
+				// Optionally notify webview of error
+			}
+			break;
 	}
 }
 

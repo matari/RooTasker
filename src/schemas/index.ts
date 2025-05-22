@@ -551,6 +551,7 @@ export const globalSettingsSchema = z.object({
 	customModePrompts: customModePromptsSchema.optional(),
 	customSupportPrompts: customSupportPromptsSchema.optional(),
 	enhancementApiConfigId: z.string().optional(),
+	activeProjectId: z.string().nullish(), // Added for active project tracking
 })
 
 export type GlobalSettings = z.infer<typeof globalSettingsSchema>
@@ -621,6 +622,7 @@ const globalSettingsRecord: GlobalSettingsRecord = {
 	customModePrompts: undefined,
 	customSupportPrompts: undefined,
 	enhancementApiConfigId: undefined,
+	activeProjectId: undefined, // Added for active project tracking
 	cachedChromeHostUrl: undefined,
 }
 

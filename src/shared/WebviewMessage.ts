@@ -132,6 +132,19 @@ export interface WebviewMessage {
 		| "searchFiles"
 		| "toggleApiConfigPin"
 		| "resumeTask"
+		// Project related message types
+		| "createProject"
+		| "updateProject"
+		| "deleteProject"
+		| "setActiveProject"
+		| "addScheduleToProject"
+		| "updateScheduleInProject"
+		| "deleteScheduleFromProject"
+		| "addWatcherToProject"
+		| "updateWatcherInProject"
+		| "deleteWatcherFromProject"
+		| "selectProjectDirectory" // For project form
+		| "projectDirectorySelected" // Response from backend
 	text?: string
 	disabled?: boolean
 	askResponse?: ClineAskResponse
@@ -158,10 +171,11 @@ export interface WebviewMessage {
 	requestId?: string
 	ids?: string[]
 	scheduleId?: string
-	watcherId?: string // Added for watcher operations
+	watcherId?: string
+	projectId?: string; // Added for project operations
 	active?: boolean
-	data?: any // Generic data payload for add/update watcher
-	path?: string // For directorySelectedForWatcher response
+	data?: any // Generic data payload for add/update operations
+	path?: string
 	taskId?: string
 }
 

@@ -1,5 +1,6 @@
 import React, { useState, useEffect, forwardRef, useImperativeHandle, useMemo } from "react";
 import { Button } from "@/components/ui/button";
+import { useExtensionState } from "../../context/ExtensionStateContext";
 import { Input } from "@/components/ui/input";
 import { AutosizeTextarea } from "@/components/ui/autosize-textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -30,6 +31,7 @@ export interface WatcherFormHandle {
 }
 
 const getDefinedForm = (initialData?: Partial<WatcherFormData>): RequiredWatcherFormData => ({
+  projectId: initialData?.projectId ?? "", // Added projectId
   name: initialData?.name ?? "",
   directoryPath: initialData?.directoryPath ?? "",
   fileTypes: initialData?.fileTypes ?? ["*.*"], // Default to all files in directory
@@ -40,27 +42,43 @@ const getDefinedForm = (initialData?: Partial<WatcherFormData>): RequiredWatcher
 
 const WatcherForm = forwardRef<WatcherFormHandle, WatcherFormProps>(
   ({ initialData, isEditing, availableModes, onSave, onCancel, onValidityChange }, ref) => {
-    const [form, setForm] = useState<RequiredWatcherFormData>(getDefinedForm(initialData));
-    const [currentFileTypeTagInput, setCurrentFileTypeTagInput] = useState<string>("");
-
-    const isValid = useMemo(() => {
-      return (
-        !!form.name.trim() &&
-        !!form.directoryPath.trim() &&
-        form.fileTypes.length > 0 && // Check array length directly
-        !!form.prompt.trim() &&
-        !!form.mode
-      );
-    }, [form]);
-
-    useEffect(() => {
-      if (onValidityChange) onValidityChange(isValid);
-    }, [isValid, onValidityChange]);
-    
-    useEffect(() => {
-        setForm(getDefinedForm(initialData));
-        // No need to set fileTypesInput anymore
-    }, [initialData]);
+  	const { projects, activeProjectId } = useExtensionState();
+  	const [currentFileTypeTagInput, setCurrentFileTypeTagInput] = useState<string>("");
+ 
+  	const effectiveInitialData = useMemo(() => {
+  		let data = initialData;
+  		if (!isEditing && (!data || !data.projectId)) {
+  			data = { ...data, projectId: activeProjectId || "" };
+  		}
+  		return data;
+  	}, [initialData, isEditing, activeProjectId]);
+ 
+  	const [form, setForm] = useState<RequiredWatcherFormData>(getDefinedForm(effectiveInitialData));
+  	
+  	useEffect(() => {
+  		// Re-initialize form when initialData or activeProjectId (for new forms) changes
+  		let baseData = initialData;
+  		if (!isEditing && (!baseData || !baseData.projectId) && activeProjectId) {
+  			baseData = { ...baseData, projectId: activeProjectId };
+  		}
+  		setForm(getDefinedForm(baseData));
+  	}, [initialData, isEditing, activeProjectId]);
+ 
+ 
+  	const isValid = useMemo(() => {
+  		return (
+  			!!form.name.trim() &&
+  			!!form.projectId && // Ensure a project is selected
+  			!!form.directoryPath.trim() &&
+  			form.fileTypes.length > 0 &&
+  			!!form.prompt.trim() &&
+  			!!form.mode
+  		);
+  	}, [form]);
+ 
+  	useEffect(() => {
+  		if (onValidityChange) onValidityChange(isValid);
+  	}, [isValid, onValidityChange]);
 
 
     useImperativeHandle(ref, () => ({
@@ -134,9 +152,36 @@ const WatcherForm = forwardRef<WatcherFormHandle, WatcherFormProps>(
           placeholder="Enter watcher name..."
           value={form.name}
           onChange={(e) => setField("name", e.target.value)}
-        />
-        <div className="flex flex-col gap-1">
-            <label className="text-vscode-descriptionForeground text-sm">
+         />
+         <div className="flex flex-col gap-1">
+          <label className="text-vscode-descriptionForeground text-sm">
+          	Project
+          	<span className="text-red-500 ml-0.5">*</span>
+          </label>
+          <Select
+          	value={form.projectId}
+          	onValueChange={(v) => setField("projectId", v)}
+          	disabled={!projects || projects.length === 0 || (isEditing && !!initialData?.projectId)}
+          >
+          	<SelectTrigger className="w-full bg-vscode-dropdown-background !bg-vscode-dropdown-background hover:!bg-vscode-dropdown-background border border-vscode-dropdown-border">
+          		<SelectValue placeholder={!projects || projects.length === 0 ? "No projects available" : "Select a project"} />
+          	</SelectTrigger>
+          	<SelectContent>
+          		{projects?.map((project) => (
+          			<SelectItem key={project.id} value={project.id}>
+          				{project.name}
+          			</SelectItem>
+          		))}
+          	</SelectContent>
+          </Select>
+          {(!projects || projects.length === 0) && (
+          	<p className="text-xs text-vscode-errorForeground mt-1">
+          		Please create a project first in the Projects tab.
+          	</p>
+          )}
+         </div>
+         <div className="flex flex-col gap-1">
+          <label className="text-vscode-descriptionForeground text-sm">
                 Directory Path <span className="text-red-500 ml-0.5">*</span>
             </label>
             <div className="flex gap-2">

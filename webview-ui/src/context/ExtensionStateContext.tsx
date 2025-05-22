@@ -1,6 +1,7 @@
 import React, { createContext, useCallback, useContext, useEffect, useState } from "react"
 import { useEvent } from "react-use"
 import { ApiConfigMeta, ExtensionMessage, ExtensionState } from "../../../src/shared/ExtensionMessage"
+import { Project, BaseSchedule, BaseWatcher } from "../../../src/shared/ProjectTypes"; // Added import
 
 import { vscode } from "../utils/vscode"
 import { convertTextMateToHljs } from "../utils/textMateToHljs"
@@ -76,6 +77,13 @@ export interface ExtensionStateContextType extends ExtensionState {
 	pinnedApiConfigs?: Record<string, boolean>
 	setPinnedApiConfigs: (value: Record<string, boolean>) => void
 	togglePinnedApiConfig: (configName: string) => void
+
+	// Project related state
+	projects?: Project[];
+	projectSchedules?: Record<string, BaseSchedule[]>;
+	projectWatchers?: Record<string, BaseWatcher[]>;
+	activeProjectId?: string | null;
+	setActiveProjectId?: (projectId: string | null) => void; // Optional: Add setter if needed directly in UI
 }
 
 export const ExtensionStateContext = createContext<ExtensionStateContextType | undefined>(undefined)
@@ -109,6 +117,8 @@ export const mergeExtensionState = (prevState: ExtensionState, newState: Extensi
 
 export const ExtensionStateContextProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
 	const [state, setState] = useState<ExtensionState>({
+		rootaskerLiteSvgUri: "", // Initialize SVG URI
+		rootaskerDarkSvgUri: "",  // Initialize SVG URI
 		version: "",
 		clineMessages: [],
 		taskHistory: [],
@@ -148,8 +158,13 @@ export const ExtensionStateContextProvider: React.FC<{ children: React.ReactNode
 		showRooIgnoredFiles: true, // Default to showing .rooignore'd files with lock symbol (current behavior).
 		renderContext: "sidebar",
 		maxReadFileLine: 500, // Default max read file line limit
-		pinnedApiConfigs: {}, // Empty object for pinned API configs
+		pinnedApiConfigs: {},
 		experiments: { search_and_replace: false, insert_content: false, powerSteering: false },
+		// Initialize project state
+		projects: [],
+		projectSchedules: {},
+		projectWatchers: {},
+		activeProjectId: null,
 	})
 
 	const [didHydrateState, setDidHydrateState] = useState(false)
@@ -294,6 +309,8 @@ export const ExtensionStateContextProvider: React.FC<{ children: React.ReactNode
 
 				return { ...prevState, pinnedApiConfigs: newPinned }
 			}),
+		// Placeholder for setActiveProjectId, actual implementation might involve posting messages
+		setActiveProjectId: (projectId) => setState((prevState) => ({ ...prevState, activeProjectId: projectId })),
 	}
 
 	return <ExtensionStateContext.Provider value={contextValue}>{children}</ExtensionStateContext.Provider>

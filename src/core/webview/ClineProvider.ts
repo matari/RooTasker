@@ -10,6 +10,7 @@ import pWaitFor from "p-wait-for"
 import * as vscode from "vscode"
 
 import { GlobalState, ProviderSettings, RooCodeSettings } from "../../schemas"
+import { Project, BaseSchedule, BaseWatcher } from "../../shared/ProjectTypes" // Corrected import path
 import { t } from "../../i18n"
 // Remove setPanel import since it's missing
 import {
@@ -29,6 +30,7 @@ import { fileExistsAtPath } from "../../utils/fs"
 import { ContextProxy } from "../config/ContextProxy"
 import { ProviderSettingsManager } from "../config/ProviderSettingsManager"
 import { CustomModesManager } from "../config/CustomModesManager"
+import { ProjectStorageService } from "../storage/ProjectStorageService";
 import { ACTION_NAMES } from "../CodeActionProvider"
 import { Cline, ClineOptions } from "../Cline"
 import { getNonce } from "./getNonce"
@@ -38,34 +40,31 @@ import { webviewMessageHandler } from "./webviewMessageHandler"
 import { WebviewMessage } from "../../shared/WebviewMessage"
 import { HistoryItem } from "../../schemas"
 
-/**
- * https://github.com/microsoft/vscode-webview-ui-toolkit-samples/blob/main/default/weather-webview/src/providers/WeatherViewProvider.ts
- * https://github.com/KumarVariable/vscode-extension-sidebar-html/blob/master/src/customSidebarViewProvider.ts
- */
 
 export type ClineProviderEvents = {
 	clineCreated: [cline: Cline]
 }
 
 export class ClineProvider extends EventEmitter<ClineProviderEvents> implements vscode.WebviewViewProvider {
-	public static readonly sideBarId = "rootasker.SidebarProvider" // used in package.json as the view's id. This value cannot be changed due to how vscode caches views based on their id, and updating the id would break existing instances of the extension.
+	public static readonly sideBarId = "rootasker.SidebarProvider" 
 	public static readonly tabPanelId = "rootasker.TabPanelProvider"
 	private static activeInstances: Set<ClineProvider> = new Set()
 	private disposables: vscode.Disposable[] = []
 	private view?: vscode.WebviewView | vscode.WebviewPanel
 	private clineStack: Cline[] = []
-	private _workspaceTracker?: any // Removed WorkspaceTracker type
+	private _workspaceTracker?: any 
 	public get workspaceTracker(): any | undefined {
 		return this._workspaceTracker
 	}
-	protected mcpHub?: any // Removed McpHub type
+	protected mcpHub?: any 
 
 	public isViewLaunched = false
 	public settingsImportedAt?: number
-	public readonly latestAnnouncementId = "apr-09-2025" // current announcement ID
+	public readonly latestAnnouncementId = "apr-09-2025" 
 	public readonly contextProxy: ContextProxy
 	public readonly providerSettingsManager: ProviderSettingsManager
 	public readonly customModesManager: CustomModesManager
+	public readonly projectStorageService: ProjectStorageService; 
 
 	constructor(
 		readonly context: vscode.ExtensionContext,
@@ -77,68 +76,42 @@ export class ClineProvider extends EventEmitter<ClineProviderEvents> implements 
 		this.log("ClineProvider instantiated")
 		this.contextProxy = new ContextProxy(context)
 		ClineProvider.activeInstances.add(this)
-
-		// Removed telemetry service registration
-
-		// Removed WorkspaceTracker initialization
-
 		this.providerSettingsManager = new ProviderSettingsManager(this.context)
 
 		this.customModesManager = new CustomModesManager(this.context, async () => {
 			await this.postStateToWebview()
 		})
 
-		// Removed MCP Hub initialization
+		this.projectStorageService = new ProjectStorageService(this.context); 
 	}
 
-	// Adds a new Cline instance to clineStack, marking the start of a new task.
-	// The instance is pushed to the top of the stack (LIFO order).
-	// When the task is completed, the top instance is removed, reactivating the previous task.
 	async addClineToStack(cline: Cline) {
 		console.log(`[subtasks] adding task ${cline.taskId}.${cline.instanceId} to stack`)
-
-		// Add this cline instance into the stack that represents the order of all the called tasks.
 		this.clineStack.push(cline)
-
-		// Ensure getState() resolves correctly.
 		const state = await this.getState()
-
 		if (!state || typeof state.mode !== "string") {
 			throw new Error(t("common:errors.retrieve_current_mode"))
 		}
 	}
 
-	// Removes and destroys the top Cline instance (the current finished task),
-	// activating the previous one (resuming the parent task).
 	async removeClineFromStack() {
 		if (this.clineStack.length === 0) {
 			return
 		}
-
-		// Pop the top Cline instance from the stack.
 		var cline = this.clineStack.pop()
-
 		if (cline) {
 			console.log(`[subtasks] removing task ${cline.taskId}.${cline.instanceId} from stack`)
-
 			try {
-				// Abort the running task and set isAbandoned to true so
-				// all running promises will exit as well.
 				await cline.abortTask(true)
 			} catch (e) {
 				this.log(
 					`[subtasks] encountered error while aborting task ${cline.taskId}.${cline.instanceId}: ${e.message}`,
 				)
 			}
-
-			// Make sure no reference kept, once promises end it will be
-			// garbage collected.
 			cline = undefined
 		}
 	}
 
-	// returns the current cline object in the stack (the top one)
-	// if the stack is empty, returns undefined
 	getCurrentCline(): Cline | undefined {
 		if (this.clineStack.length === 0) {
 			return undefined
@@ -146,7 +119,6 @@ export class ClineProvider extends EventEmitter<ClineProviderEvents> implements 
 		return this.clineStack[this.clineStack.length - 1]
 	}
 
-	// returns the current clineStack length (how many cline objects are in the stack)
 	getClineStackSize(): number {
 		return this.clineStack.length
 	}
@@ -155,24 +127,14 @@ export class ClineProvider extends EventEmitter<ClineProviderEvents> implements 
 		return this.clineStack.map((cline) => cline.taskId)
 	}
 
-	// remove the current task/cline instance (at the top of the stack), ao this task is finished
-	// and resume the previous task/cline instance (if it exists)
-	// this is used when a sub task is finished and the parent task needs to be resumed
 	async finishSubTask(lastMessage?: string) {
 		console.log(`[subtasks] finishing subtask ${lastMessage}`)
-		// remove the last cline instance from the stack (this is the finished sub task)
 		await this.removeClineFromStack()
-		// resume the last cline instance in the stack (if it exists - this is the 'parent' calling task)
 		if (lastMessage && this.getCurrentCline()) {
 			this.getCurrentCline()?.resumePausedTask(lastMessage)
 		}
 	}
 
-	/*
-	VSCode extensions use the disposable pattern to clean up resources when the sidebar/editor tab is closed by the user or system. This applies to event listening, commands, interacting with the UI, etc.
-	- https://vscode-docs.readthedocs.io/en/stable/extensions/patterns-and-principles/
-	- https://github.com/microsoft/vscode-extension-samples/blob/main/webview-sample/src/extension.ts
-	*/
 	async dispose() {
 		this.log("Disposing ClineProvider...")
 		await this.removeClineFromStack()
@@ -185,43 +147,31 @@ export class ClineProvider extends EventEmitter<ClineProviderEvents> implements 
 
 		while (this.disposables.length) {
 			const x = this.disposables.pop()
-
 			if (x) {
 				x.dispose()
 			}
 		}
-
-		// Removed workspaceTracker and mcpHub disposal
 		this._workspaceTracker = undefined
 		this.mcpHub = undefined
 		this.customModesManager?.dispose()
 		this.log("Disposed all disposables")
 		ClineProvider.activeInstances.delete(this)
-
-		// Removed McpServerManager unregistration
 	}
 
 	public static getVisibleInstance(): ClineProvider | undefined {
-		// Replace findLast with Array.from().reverse().find()
 		return Array.from(this.activeInstances).reverse().find((instance: ClineProvider) => instance.view?.visible === true)
 	}
 
 	public static async getInstance(): Promise<ClineProvider | undefined> {
 		let visibleProvider = ClineProvider.getVisibleInstance()
-
-		// If no visible provider, try to show the sidebar view
 		if (!visibleProvider) {
 			await vscode.commands.executeCommand("rootasker.SidebarProvider.focus")
-			// Wait briefly for the view to become visible
 			await delay(100)
 			visibleProvider = ClineProvider.getVisibleInstance()
 		}
-
-		// If still no visible provider, return
 		if (!visibleProvider) {
 			return
 		}
-
 		return visibleProvider
 	}
 
@@ -230,12 +180,9 @@ export class ClineProvider extends EventEmitter<ClineProviderEvents> implements 
 		if (!visibleProvider) {
 			return false
 		}
-
-		// check if there is a cline instance in the stack (if this provider has an active task)
 		if (visibleProvider.getCurrentCline()) {
 			return true
 		}
-
 		return false
 	}
 
@@ -245,31 +192,23 @@ export class ClineProvider extends EventEmitter<ClineProviderEvents> implements 
 		params: Record<string, string | any[]>,
 	): Promise<void> {
 		const visibleProvider = await ClineProvider.getInstance()
-
 		if (!visibleProvider) {
 			return
 		}
-
 		const { customSupportPrompts } = await visibleProvider.getState()
-
-		// Create a simple prompt instead of using supportPrompt
 		const prompt = `${promptType}: ${JSON.stringify(params)}`
-
 		if (command.endsWith("addToContext")) {
 			await visibleProvider.postMessageToWebview({
 				type: "invoke",
 				invoke: "setChatBoxMessage",
 				text: prompt,
 			})
-
 			return
 		}
-
 		if (visibleProvider.getCurrentCline() && command.endsWith("InCurrentTask")) {
 			await visibleProvider.postMessageToWebview({ type: "invoke", invoke: "sendMessage", text: prompt })
 			return
 		}
-
 		await visibleProvider.initClineWithTask(prompt)
 	}
 
@@ -282,12 +221,8 @@ export class ClineProvider extends EventEmitter<ClineProviderEvents> implements 
 		if (!visibleProvider) {
 			return
 		}
-
 		const { customSupportPrompts } = await visibleProvider.getState()
-
-		// Create a simple prompt instead of using supportPrompt
 		const prompt = `${promptType}: ${JSON.stringify(params)}`
-
 		if (command.endsWith("AddToContext")) {
 			await visibleProvider.postMessageToWebview({
 				type: "invoke",
@@ -296,7 +231,6 @@ export class ClineProvider extends EventEmitter<ClineProviderEvents> implements 
 			})
 			return
 		}
-
 		if (visibleProvider.getCurrentCline() && command.endsWith("InCurrentTask")) {
 			await visibleProvider.postMessageToWebview({
 				type: "invoke",
@@ -305,48 +239,25 @@ export class ClineProvider extends EventEmitter<ClineProviderEvents> implements 
 			})
 			return
 		}
-
 		await visibleProvider.initClineWithTask(prompt)
 	}
 
 	async resolveWebviewView(webviewView: vscode.WebviewView | vscode.WebviewPanel) {
 		this.log("Resolving webview view")
-
 		if (!this.contextProxy.isInitialized) {
 			await this.contextProxy.initialize()
 		}
-
 		this.view = webviewView
-
-		// Removed setPanel calls since the import is missing
-
-		// Removed setSoundEnabled and Terminal.setShellIntegrationTimeout calls
-
-		// Removed tts initialization
-
 		webviewView.webview.options = {
-			// Allow scripts in the webview
 			enableScripts: true,
 			localResourceRoots: [this.contextProxy.extensionUri],
 		}
-
 		webviewView.webview.html =
 			this.contextProxy.extensionMode === vscode.ExtensionMode.Development
 				? await this.getHMRHtmlContent(webviewView.webview)
 				: this.getHtmlContent(webviewView.webview)
-
-		// Sets up an event listener to listen for messages passed from the webview view context
-		// and executes code based on the message that is recieved
 		this.setWebviewMessageListener(webviewView.webview)
-
-		// Logs show up in bottom panel > Debug Console
-		//console.log("registering listener")
-
-		// Listen for when the panel becomes visible
-		// https://github.com/microsoft/vscode-discussions/discussions/840
 		if ("onDidChangeViewState" in webviewView) {
-			// WebviewView and WebviewPanel have all the same properties except for this visibility listener
-			// panel
 			webviewView.onDidChangeViewState(
 				() => {
 					if (this.view?.visible) {
@@ -357,7 +268,6 @@ export class ClineProvider extends EventEmitter<ClineProviderEvents> implements 
 				this.disposables,
 			)
 		} else if ("onDidChangeVisibility" in webviewView) {
-			// sidebar
 			webviewView.onDidChangeVisibility(
 				() => {
 					if (this.view?.visible) {
@@ -368,9 +278,6 @@ export class ClineProvider extends EventEmitter<ClineProviderEvents> implements 
 				this.disposables,
 			)
 		}
-
-		// Listen for when the view is disposed
-		// This happens when the user closes the view or when the view is closed programmatically
 		webviewView.onDidDispose(
 			async () => {
 				await this.dispose()
@@ -378,35 +285,33 @@ export class ClineProvider extends EventEmitter<ClineProviderEvents> implements 
 			null,
 			this.disposables,
 		)
-
-		// Listen for when color changes
 		vscode.workspace.onDidChangeConfiguration(
 			async (e) => {
 				if (e && e.affectsConfiguration("workbench.colorTheme")) {
-					// Simplified theme handling
 					await this.postMessageToWebview({ type: "theme", text: JSON.stringify({ kind: "dark" }) })
 				}
 			},
 			null,
 			this.disposables,
 		)
-
-		// If the extension is starting a new session, clear previous task state.
 		await this.removeClineFromStack()
-
+		const currentWorkspacePath = getWorkspacePath();
+		if (currentWorkspacePath) {
+		  const migratedProject = await this.projectStorageService.migrateFromWorkspaceStorageIfNeeded(currentWorkspacePath);
+		  if (migratedProject) {
+		    this.log(`Migration resulted in project: ${migratedProject.name} (ID: ${migratedProject.id}). Setting as active.`);
+		    await this.contextProxy.setValue("activeProjectId", migratedProject.id);
+		    // No need to call postStateToWebview here, as resolveWebviewView will eventually lead to it
+		          // or the initial state sent will include this activeProjectId.
+		  }
+		}
 		this.log("Webview view resolved")
-	}
+}
 
 	public async initClineWithSubTask(parent: Cline, task?: string, images?: string[]) {
 		return this.initClineWithTask(task, images, parent)
 	}
 
-	// When initializing a new task, (not from history but from a tool command
-	// new_task) there is no need to remove the previouse task since the new
-	// task is a subtask of the previous one, and when it finishes it is removed
-	// from the stack and the caller is resumed in this way we can have a chain
-	// of tasks, each one being a sub task of the previous one until the main
-	// task is finished.
 	public async initClineWithTask(
 		task?: string,
 		images?: string[],
@@ -435,10 +340,8 @@ export class ClineProvider extends EventEmitter<ClineProviderEvents> implements 
 			customInstructions: globalInstructions,
 			experiments,
 		} = await this.getState()
-
 		const modePrompt = customModePrompts?.[mode] as PromptComponent
 		const effectiveInstructions = [globalInstructions, modePrompt?.customInstructions].filter(Boolean).join("\n\n")
-
 		const cline = new Cline({
 			provider: this,
 			apiConfiguration,
@@ -456,19 +359,15 @@ export class ClineProvider extends EventEmitter<ClineProviderEvents> implements 
 			onCreated: (cline) => this.emit("clineCreated", cline),
 			...options,
 		})
-
 		await this.addClineToStack(cline)
-
 		this.log(
 			`[subtasks] ${cline.parentTask ? "child" : "parent"} task ${cline.taskId}.${cline.instanceId} instantiated`,
 		)
-
 		return cline
 	}
 
 	public async initClineWithHistoryItem(historyItem: HistoryItem & { rootTask?: Cline; parentTask?: Cline }) {
 		await this.removeClineFromStack()
-
 		const {
 			apiConfiguration,
 			customModePrompts,
@@ -480,20 +379,15 @@ export class ClineProvider extends EventEmitter<ClineProviderEvents> implements 
 			customInstructions: globalInstructions,
 			experiments,
 		} = await this.getState()
-
 		const modePrompt = customModePrompts?.[mode] as PromptComponent
 		const effectiveInstructions = [globalInstructions, modePrompt?.customInstructions].filter(Boolean).join("\n\n")
-
 		const taskId = historyItem.id
 		const globalStorageDir = this.contextProxy.globalStorageUri.fsPath
 		const workspaceDir = this.cwd
-
 		const checkpoints: Pick<ClineOptions, "enableCheckpoints" | "checkpointStorage"> = {
 			enableCheckpoints,
 			checkpointStorage,
 		}
-
-		// Removed ShadowCheckpointService usage
 		const cline = new Cline({
 			provider: this,
 			apiConfiguration,
@@ -508,7 +402,6 @@ export class ClineProvider extends EventEmitter<ClineProviderEvents> implements 
 			taskNumber: historyItem.number,
 			onCreated: (cline) => this.emit("clineCreated", cline),
 		})
-
 		await this.addClineToStack(cline)
 		this.log(
 			`[subtasks] ${cline.parentTask ? "child" : "parent"} task ${cline.taskId}.${cline.instanceId} instantiated`,
@@ -523,38 +416,18 @@ export class ClineProvider extends EventEmitter<ClineProviderEvents> implements 
 	private async getHMRHtmlContent(webview: vscode.Webview): Promise<string> {
 		const localPort = "5173"
 		const localServerUrl = `localhost:${localPort}`
-
-		// Check if local dev server is running.
 		try {
 			await axios.get(`http://${localServerUrl}`)
 		} catch (error) {
 			vscode.window.showErrorMessage(t("common:errors.hmr_not_running"))
-
 			return this.getHtmlContent(webview)
 		}
-
 		const nonce = getNonce()
-
-		const stylesUri = getUri(webview, this.contextProxy.extensionUri, [
-			"webview-ui",
-			"build",
-			"assets",
-			"index.css",
-		])
-
-		const codiconsUri = getUri(webview, this.contextProxy.extensionUri, [
-			"node_modules",
-			"@vscode",
-			"codicons",
-			"dist",
-			"codicon.css",
-		])
-
+		const stylesUri = getUri(webview, this.contextProxy.extensionUri, ["webview-ui", "build", "assets", "index.css"])
+		const codiconsUri = getUri(webview, this.contextProxy.extensionUri, ["node_modules", "@vscode", "codicons", "dist", "codicon.css"])
 		const imagesUri = getUri(webview, this.contextProxy.extensionUri, ["assets", "images"])
-
 		const file = "src/index.tsx"
 		const scriptUri = `http://${localServerUrl}/${file}`
-
 		const reactRefresh = /*html*/ `
 			<script nonce="${nonce}" type="module">
 				import RefreshRuntime from "http://localhost:${localPort}/@react-refresh"
@@ -564,7 +437,6 @@ export class ClineProvider extends EventEmitter<ClineProviderEvents> implements 
 				window.__vite_plugin_react_preamble_installed__ = true
 			</script>
 		`
-
 		const csp = [
 			"default-src 'none'",
 			`font-src ${webview.cspSource}`,
@@ -573,7 +445,6 @@ export class ClineProvider extends EventEmitter<ClineProviderEvents> implements 
 			`script-src 'unsafe-eval' ${webview.cspSource} https://* https://*.posthog.com http://${localServerUrl} http://0.0.0.0:${localPort} 'nonce-${nonce}'`,
 			`connect-src https://* https://*.posthog.com ws://${localServerUrl} ws://0.0.0.0:${localPort} http://${localServerUrl} http://0.0.0.0:${localPort}`,
 		]
-
 		return /*html*/ `
 			<!DOCTYPE html>
 			<html lang="en">
@@ -597,67 +468,12 @@ export class ClineProvider extends EventEmitter<ClineProviderEvents> implements 
 		`
 	}
 
-	/**
-	 * Defines and returns the HTML that should be rendered within the webview panel.
-	 *
-	 * @remarks This is also the place where references to the React webview build files
-	 * are created and inserted into the webview HTML.
-	 *
-	 * @param webview A reference to the extension webview
-	 * @param extensionUri The URI of the directory containing the extension
-	 * @returns A template string literal containing the HTML that should be
-	 * rendered within the webview panel
-	 */
 	private getHtmlContent(webview: vscode.Webview): string {
-		// Get the local path to main script run in the webview,
-		// then convert it to a uri we can use in the webview.
-
-		// The CSS file from the React build output
-		const stylesUri = getUri(webview, this.contextProxy.extensionUri, [
-			"webview-ui",
-			"build",
-			"assets",
-			"index.css",
-		])
-		// The JS file from the React build output
+		const stylesUri = getUri(webview, this.contextProxy.extensionUri, ["webview-ui", "build", "assets", "index.css"])
 		const scriptUri = getUri(webview, this.contextProxy.extensionUri, ["webview-ui", "build", "assets", "index.js"])
-
-		// The codicon font from the React build output
-		// https://github.com/microsoft/vscode-extension-samples/blob/main/webview-codicons-sample/src/extension.ts
-		// we installed this package in the extension so that we can access it how its intended from the extension (the font file is likely bundled in vscode), and we just import the css fileinto our react app we don't have access to it
-		// don't forget to add font-src ${webview.cspSource};
-		const codiconsUri = getUri(webview, this.contextProxy.extensionUri, [
-			"node_modules",
-			"@vscode",
-			"codicons",
-			"dist",
-			"codicon.css",
-		])
-
+		const codiconsUri = getUri(webview, this.contextProxy.extensionUri, ["node_modules", "@vscode", "codicons", "dist", "codicon.css"])
 		const imagesUri = getUri(webview, this.contextProxy.extensionUri, ["assets", "images"])
-
-		// const scriptUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, "assets", "main.js"))
-
-		// const styleResetUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, "assets", "reset.css"))
-		// const styleVSCodeUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, "assets", "vscode.css"))
-
-		// // Same for stylesheet
-		// const stylesheetUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, "assets", "main.css"))
-
-		// Use a nonce to only allow a specific script to be run.
-		/*
-		content security policy of your webview to only allow scripts that have a specific nonce
-		create a content security policy meta tag so that only loading scripts with a nonce is allowed
-		As your extension grows you will likely want to add custom styles, fonts, and/or images to your webview. If you do, you will need to update the content security policy meta tag to explicity allow for these resources. E.g.
-				<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${webview.cspSource}; font-src ${webview.cspSource}; img-src ${webview.cspSource} https:; script-src 'nonce-${nonce}';">
-		- 'unsafe-inline' is required for styles due to vscode-webview-toolkit's dynamic style injection
-		- since we pass base64 images to the webview, we need to specify img-src ${webview.cspSource} data:;
-
-		in meta tag we add nonce attribute: A cryptographic nonce (only used once) to allow scripts. The server must generate a unique nonce value each time it transmits a policy. It is critical to provide a nonce that cannot be guessed as bypassing a resource's policy is otherwise trivial.
-		*/
 		const nonce = getNonce()
-
-		// Tip: Install the es6-string-html VS Code extension to enable code highlighting below
 		return /*html*/ `
         <!DOCTYPE html>
         <html lang="en">
@@ -682,111 +498,69 @@ export class ClineProvider extends EventEmitter<ClineProviderEvents> implements 
       `
 	}
 
-	/**
-	 * Sets up an event listener to listen for messages passed from the webview context and
-	 * executes code based on the message that is recieved.
-	 *
-	 * @param webview A reference to the extension webview
-	 */
 	private setWebviewMessageListener(webview: vscode.Webview) {
 		const onReceiveMessage = async (message: WebviewMessage) => webviewMessageHandler(this, message)
-
 		webview.onDidReceiveMessage(onReceiveMessage, null, this.disposables)
 	}
 
-	/**
-	 * Handle switching to a new mode, including updating the associated API configuration
-	 * @param newMode The mode to switch to
-	 */
 	public async handleModeSwitch(newMode: Mode) {
-		// Capture mode switch telemetry event
 		const cline = this.getCurrentCline()
-
 		if (cline) {
-			// Removed telemetry capture
 			cline.emit("taskModeSwitched", cline.taskId, newMode)
 		}
-
 		await this.updateGlobalState("mode", newMode)
-
-		// Load the saved API config for the new mode if it exists
 		const savedConfigId = await this.providerSettingsManager.getModeConfigId(newMode)
 		const listApiConfig = await this.providerSettingsManager.listConfig()
-
-		// Update listApiConfigMeta first to ensure UI has latest data
 		await this.updateGlobalState("listApiConfigMeta", listApiConfig)
-
-		// If this mode has a saved config, use it
 		if (savedConfigId) {
 			const config = listApiConfig?.find((c) => c.id === savedConfigId)
-
 			if (config?.name) {
 				const apiConfig = await this.providerSettingsManager.loadConfig(config.name)
-
 				await Promise.all([
 					this.updateGlobalState("currentApiConfigName", config.name),
 					this.updateApiConfiguration(apiConfig),
 				])
 			}
 		} else {
-			// If no saved config for this mode, save current config as default
 			const currentApiConfigName = this.getGlobalState("currentApiConfigName")
-
 			if (currentApiConfigName) {
 				const config = listApiConfig?.find((c) => c.name === currentApiConfigName)
-
 				if (config?.id) {
 					await this.providerSettingsManager.setModeConfig(newMode, config.id)
 				}
 			}
 		}
-
 		await this.postStateToWebview()
 	}
 
 	async updateApiConfiguration(providerSettings: ProviderSettings) {
-		// Update mode's default config.
 		const { mode } = await this.getState()
-
 		if (mode) {
 			const currentApiConfigName = this.getGlobalState("currentApiConfigName")
 			const listApiConfig = await this.providerSettingsManager.listConfig()
 			const config = listApiConfig?.find((c) => c.name === currentApiConfigName)
-
 			if (config?.id) {
 				await this.providerSettingsManager.setModeConfig(mode, config.id)
 			}
 		}
-
 		await this.contextProxy.setProviderSettings(providerSettings)
-
-		// Removed buildApiHandler call
 	}
 
 	async cancelTask() {
 		const cline = this.getCurrentCline()
-
 		if (!cline) {
 			return
 		}
-
 		console.log(`[subtasks] cancelling task ${cline.taskId}.${cline.instanceId}`)
-
 		const { historyItem } = await this.getTaskWithId(cline.taskId)
-		// Preserve parent and root task information for history item.
 		const rootTask = cline.rootTask
 		const parentTask = cline.parentTask
-
 		cline.abortTask()
-
 		await pWaitFor(
 			() =>
 				this.getCurrentCline()! === undefined ||
 				this.getCurrentCline()!.isStreaming === false ||
 				this.getCurrentCline()!.didFinishAbortingStream ||
-				// If only the first chunk is processed, then there's no
-				// need to wait for graceful abort (closes edits, browser,
-				// etc).
 				this.getCurrentCline()!.isWaitingForFirstChunk,
 			{
 				timeout: 3_000,
@@ -794,49 +568,32 @@ export class ClineProvider extends EventEmitter<ClineProviderEvents> implements 
 		).catch(() => {
 			console.error("Failed to abort task")
 		})
-
 		if (this.getCurrentCline()) {
-			// 'abandoned' will prevent this Cline instance from affecting
-			// future Cline instances. This may happen if its hanging on a
-			// streaming request.
 			this.getCurrentCline()!.abandoned = true
 		}
-
-		// Clears task again, so we need to abortTask manually above.
 		await this.initClineWithHistoryItem({ ...historyItem, rootTask, parentTask })
 	}
 
 	async updateCustomInstructions(instructions?: string) {
-		// User may be clearing the field.
 		await this.updateGlobalState("customInstructions", instructions || undefined)
-
 		if (this.getCurrentCline()) {
 			this.getCurrentCline()!.customInstructions = instructions || undefined
 		}
-
 		await this.postStateToWebview()
 	}
 
-	// MCP
-
 	async ensureMcpServersDirectoryExists(): Promise<string> {
-		// Get platform-specific application data directory
 		let mcpServersDir: string
 		if (process.platform === "win32") {
-			// Windows: %APPDATA%\RooTasker\MCP
 			mcpServersDir = path.join(os.homedir(), "AppData", "Roaming", "RooTasker", "MCP")
 		} else if (process.platform === "darwin") {
-			// macOS: ~/Documents/RooTasker/MCP
 			mcpServersDir = path.join(os.homedir(), "Documents", "RooTasker", "MCP")
 		} else {
-			// Linux: ~/.local/share/RooTasker/MCP
 			mcpServersDir = path.join(os.homedir(), ".local", "share", "RooTasker", "MCP")
 		}
-
 		try {
 			await fs.mkdir(mcpServersDir, { recursive: true })
 		} catch (error) {
-			// Fallback to a relative path if directory creation fails
 			return path.join(os.homedir(), ".rootasker", "mcp")
 		}
 		return mcpServersDir
@@ -862,24 +619,18 @@ export class ClineProvider extends EventEmitter<ClineProviderEvents> implements 
 	async readModelsFromCache(filename: string): Promise<Record<string, ModelInfo> | undefined> {
 		const filePath = path.join(await this.ensureCacheDirectoryExists(), filename)
 		const fileExists = await fileExistsAtPath(filePath)
-
 		if (fileExists) {
 			const fileContents = await fs.readFile(filePath, "utf8")
 			return JSON.parse(fileContents)
 		}
-
 		return undefined
 	}
 
-	// OpenRouter
-
 	async handleOpenRouterCallback(code: string) {
 		let { apiConfiguration, currentApiConfigName } = await this.getState()
-
 		let apiKey: string
 		try {
 			const baseUrl = apiConfiguration.openRouterBaseUrl || "https://openrouter.ai/api/v1"
-			// Extract the base domain for the auth endpoint
 			const baseUrlDomain = baseUrl.match(/^(https?:\/\/[^\/]+)/)?.[1] || "https://openrouter.ai"
 			const response = await axios.post(`${baseUrlDomain}/api/v1/auth/keys`, { code })
 			if (response.data && response.data.key) {
@@ -893,7 +644,6 @@ export class ClineProvider extends EventEmitter<ClineProviderEvents> implements 
 			)
 			throw error
 		}
-
 		const newConfiguration: ApiConfiguration = {
 			...apiConfiguration,
 			apiProvider: "openrouter",
@@ -901,11 +651,8 @@ export class ClineProvider extends EventEmitter<ClineProviderEvents> implements 
 			openRouterModelId: apiConfiguration?.openRouterModelId,
 			openRouterModelInfo: apiConfiguration?.openRouterModelInfo,
 		}
-
 		await this.upsertApiConfiguration(currentApiConfigName, newConfiguration)
 	}
-
-	// Glama
 
 	async handleGlamaCallback(code: string) {
 		let apiKey: string
@@ -922,9 +669,7 @@ export class ClineProvider extends EventEmitter<ClineProviderEvents> implements 
 			)
 			throw error
 		}
-
 		const { apiConfiguration, currentApiConfigName } = await this.getState()
-
 		const newConfiguration: ApiConfiguration = {
 			...apiConfiguration,
 			apiProvider: "glama",
@@ -932,15 +677,11 @@ export class ClineProvider extends EventEmitter<ClineProviderEvents> implements 
 			glamaModelId: apiConfiguration?.glamaModelId,
 			glamaModelInfo: apiConfiguration?.glamaModelInfo,
 		}
-
 		await this.upsertApiConfiguration(currentApiConfigName, newConfiguration)
 	}
 
-	// Requesty
-
 	async handleRequestyCallback(code: string) {
 		let { apiConfiguration, currentApiConfigName } = await this.getState()
-
 		const newConfiguration: ApiConfiguration = {
 			...apiConfiguration,
 			apiProvider: "requesty",
@@ -948,23 +689,18 @@ export class ClineProvider extends EventEmitter<ClineProviderEvents> implements 
 			requestyModelId: apiConfiguration?.requestyModelId,
 			requestyModelInfo: apiConfiguration?.requestyModelInfo,
 		}
-
 		await this.upsertApiConfiguration(currentApiConfigName, newConfiguration)
 	}
-
-	// Save configuration
 
 	async upsertApiConfiguration(configName: string, apiConfiguration: ApiConfiguration) {
 		try {
 			await this.providerSettingsManager.saveConfig(configName, apiConfiguration)
 			const listApiConfig = await this.providerSettingsManager.listConfig()
-
 			await Promise.all([
 				this.updateGlobalState("listApiConfigMeta", listApiConfig),
 				this.updateApiConfiguration(apiConfiguration),
 				this.updateGlobalState("currentApiConfigName", configName),
 			])
-
 			await this.postStateToWebview()
 		} catch (error) {
 			this.log(
@@ -973,8 +709,6 @@ export class ClineProvider extends EventEmitter<ClineProviderEvents> implements 
 			vscode.window.showErrorMessage(t("common:errors.create_api_config"))
 		}
 	}
-
-	// Task history
 
 	async getTaskWithId(id: string): Promise<{
 		historyItem: HistoryItem
@@ -985,7 +719,6 @@ export class ClineProvider extends EventEmitter<ClineProviderEvents> implements 
 	}> {
 		const history = this.getGlobalState("taskHistory") ?? []
 		const historyItem = history.find((item) => item.id === id)
-
 		if (historyItem) {
 			const { getTaskDirectoryPath } = await import("../../shared/storagePathManager")
 			const globalStoragePath = this.contextProxy.globalStorageUri.fsPath
@@ -993,10 +726,8 @@ export class ClineProvider extends EventEmitter<ClineProviderEvents> implements 
 			const apiConversationHistoryFilePath = path.join(taskDirPath, GlobalFileNames.apiConversationHistory)
 			const uiMessagesFilePath = path.join(taskDirPath, GlobalFileNames.uiMessages)
 			const fileExists = await fileExistsAtPath(apiConversationHistoryFilePath)
-
 			if (fileExists) {
 				const apiConversationHistory = JSON.parse(await fs.readFile(apiConversationHistoryFilePath, "utf8"))
-
 				return {
 					historyItem,
 					taskDirPath,
@@ -1006,48 +737,30 @@ export class ClineProvider extends EventEmitter<ClineProviderEvents> implements 
 				}
 			}
 		}
-
-		// if we tried to get a task that doesn't exist, remove it from state
-		// FIXME: this seems to happen sometimes when the json file doesnt save to disk for some reason
 		await this.deleteTaskFromState(id)
 		throw new Error("Task not found")
 	}
 
 	async showTaskWithId(id: string) {
 		if (id !== this.getCurrentCline()?.taskId) {
-			// Non-current task.
 			const { historyItem } = await this.getTaskWithId(id)
-			await this.initClineWithHistoryItem(historyItem) // Clears existing task.
+			await this.initClineWithHistoryItem(historyItem) 
 		}
-
 		await this.postMessageToWebview({ type: "action", action: "chatButtonClicked" })
 	}
 
 	async exportTaskWithId(id: string) {
 		const { historyItem, apiConversationHistory } = await this.getTaskWithId(id)
-		// Removed downloadTask call
 		this.log(`Export task ${id} requested but downloadTask function is not available`)
 	}
 
-	// this function deletes a task from task hidtory, and deletes it's checkpoints and delete the task folder
 	async deleteTaskWithId(id: string) {
 		try {
-			// get the task directory full path
 			const { taskDirPath } = await this.getTaskWithId(id)
-
-			// remove task from stack if it's the current task
 			if (id === this.getCurrentCline()?.taskId) {
-				// if we found the taskid to delete - call finish to abort this task and allow a new task to be started,
-				// if we are deleting a subtask and parent task is still waiting for subtask to finish - it allows the parent to resume (this case should neve exist)
 				await this.finishSubTask(t("common:tasks.deleted"))
 			}
-
-			// delete task from the task history state
 			await this.deleteTaskFromState(id)
-
-			// Removed ShadowCheckpointService.deleteTask call
-
-			// delete the entire task directory including checkpoints and all content
 			try {
 				await fs.rm(taskDirPath, { recursive: true, force: true })
 				console.log(`[deleteTaskWithId${id}] removed task directory`)
@@ -1057,7 +770,6 @@ export class ClineProvider extends EventEmitter<ClineProviderEvents> implements 
 				)
 			}
 		} catch (error) {
-			// If task is not found, just remove it from state
 			if (error instanceof Error && error.message === "Task not found") {
 				await this.deleteTaskFromState(id)
 				return
@@ -1078,7 +790,7 @@ export class ClineProvider extends EventEmitter<ClineProviderEvents> implements 
 		this.postMessageToWebview({ type: "state", state })
 	}
 
-	async getStateToPostToWebview() {
+	async getStateToPostToWebview(): Promise<ExtensionMessage['state']> { // Added explicit return type
 		const {
 			apiConfiguration,
 			lastShownAnnouncementId,
@@ -1130,12 +842,32 @@ export class ClineProvider extends EventEmitter<ClineProviderEvents> implements 
 			showRooIgnoredFiles,
 			language,
 			maxReadFileLine,
-		} = await this.getState()
+		} = await this.getState();
 
-		const telemetryKey = process.env.POSTHOG_API_KEY
-		const machineId = vscode.env.machineId
-		const allowedCommands = vscode.workspace.getConfiguration("roo-cline").get<string[]>("allowedCommands") || []
-		const cwd = this.cwd
+		// Fetch project data
+		const projects = await this.projectStorageService.getProjects();
+		const projectSchedules: Record<string, BaseSchedule[]> = {}; // Explicit type
+		const projectWatchers: Record<string, BaseWatcher[]> = {}; // Explicit type
+
+		for (const project of projects) {
+			projectSchedules[project.id] = await this.projectStorageService.getSchedulesForProject(project.id);
+			projectWatchers[project.id] = await this.projectStorageService.getWatchersForProject(project.id);
+		}
+		const activeProjectId = this.contextProxy.getValue("activeProjectId") || null;
+
+		const telemetryKey = process.env.POSTHOG_API_KEY;
+		const machineId = vscode.env.machineId;
+		const allowedCommands = vscode.workspace.getConfiguration("roo-cline").get<string[]>("allowedCommands") || [];
+		const cwd = this.cwd;
+
+		const webview = this.view?.webview;
+		let rootaskerLiteSvgUri = "";
+		let rootaskerDarkSvgUri = "";
+
+		if (webview && this.contextProxy.extensionUri) {
+			rootaskerLiteSvgUri = getUri(webview, this.contextProxy.extensionUri, ["assets", "icons", "RooTasker_lite.png"]).toString();
+			rootaskerDarkSvgUri = getUri(webview, this.contextProxy.extensionUri, ["assets", "icons", "RooTasker_dark.png"]).toString();
+		}
 
 		return {
 			version: this.context.extension?.packageJSON?.version ?? "",
@@ -1172,7 +904,7 @@ export class ClineProvider extends EventEmitter<ClineProviderEvents> implements 
 			screenshotQuality: screenshotQuality ?? 75,
 			remoteBrowserHost,
 			remoteBrowserEnabled: remoteBrowserEnabled ?? false,
-			cachedChromeHostUrl: cachedChromeHostUrl,
+			// cachedChromeHostUrl: cachedChromeHostUrl, // Removed as it's not in ExtensionState
 			writeDelayMs: writeDelayMs ?? 1000,
 			terminalOutputLineLimit: terminalOutputLineLimit ?? 500,
 			terminalShellIntegrationTimeout: terminalShellIntegrationTimeout ?? TERMINAL_SHELL_INTEGRATION_TIMEOUT,
@@ -1181,7 +913,7 @@ export class ClineProvider extends EventEmitter<ClineProviderEvents> implements 
 			enableMcpServerCreation: enableMcpServerCreation ?? true,
 			alwaysApproveResubmit: alwaysApproveResubmit ?? false,
 			requestDelaySeconds: requestDelaySeconds ?? 10,
-			rateLimitSeconds: rateLimitSeconds ?? 0,
+			// rateLimitSeconds: rateLimitSeconds ?? 0, // Removed as it's not in ExtensionState
 			currentApiConfigName: currentApiConfigName ?? "default",
 			listApiConfigMeta: listApiConfigMeta ?? [],
 			pinnedApiConfigs: pinnedApiConfigs ?? {},
@@ -1192,7 +924,7 @@ export class ClineProvider extends EventEmitter<ClineProviderEvents> implements 
 			autoApprovalEnabled: autoApprovalEnabled ?? false,
 			customModes: await this.customModesManager.getCustomModes(),
 			experiments: experiments ?? experimentDefault,
-			mcpServers: this.mcpHub?.getAllServers() ?? [],
+			// mcpServers: this.mcpHub?.getAllServers() ?? [], // Removed as it's not in ExtensionState
 			maxOpenTabsContext: maxOpenTabsContext ?? 20,
 			maxWorkspaceFiles: maxWorkspaceFiles ?? 200,
 			cwd,
@@ -1205,32 +937,24 @@ export class ClineProvider extends EventEmitter<ClineProviderEvents> implements 
 			renderContext: this.renderContext,
 			maxReadFileLine: maxReadFileLine ?? 500,
 			settingsImportedAt: this.settingsImportedAt,
+			rootaskerLiteSvgUri,
+			rootaskerDarkSvgUri,
+			// Add project data
+			projects,
+			projectSchedules,
+			projectWatchers,
+			activeProjectId,
 		}
 	}
 
-	/**
-	 * Storage
-	 * https://dev.to/kompotkot/how-to-use-secretstorage-in-your-vscode-extensions-2hco
-	 * https://www.eliostruyf.com/devhack-code-extension-storage-options/
-	 */
-
 	async getState() {
 		const stateValues = this.contextProxy.getValues()
-
 		const customModes = await this.customModesManager.getCustomModes()
-
-		// Determine apiProvider with the same logic as before.
 		const apiProvider: ApiProvider = stateValues.apiProvider ? stateValues.apiProvider : "anthropic"
-
-		// Build the apiConfiguration object combining state values and secrets.
 		const providerSettings = this.contextProxy.getProviderSettings()
-
-		// Ensure apiProvider is set properly if not already in state
 		if (!providerSettings.apiProvider) {
 			providerSettings.apiProvider = apiProvider
 		}
-
-		// Return the same structure as before
 		return {
 			apiConfiguration: providerSettings,
 			lastShownAnnouncementId: stateValues.lastShownAnnouncementId,
@@ -1293,25 +1017,19 @@ export class ClineProvider extends EventEmitter<ClineProviderEvents> implements 
 	async updateTaskHistory(item: HistoryItem): Promise<HistoryItem[]> {
 		const history = (this.getGlobalState("taskHistory") as HistoryItem[] | undefined) || []
 		const existingItemIndex = history.findIndex((h) => h.id === item.id)
-
 		if (existingItemIndex !== -1) {
 			history[existingItemIndex] = item
 		} else {
 			history.push(item)
 		}
-
 		await this.updateGlobalState("taskHistory", history)
 		return history
 	}
 
-	// ContextProxy
-
-	// @deprecated - Use `ContextProxy#setValue` instead.
 	private async updateGlobalState<K extends keyof GlobalState>(key: K, value: GlobalState[K]) {
 		await this.contextProxy.setValue(key, value)
 	}
 
-	// @deprecated - Use `ContextProxy#getValue` instead.
 	private getGlobalState<K extends keyof GlobalState>(key: K) {
 		return this.contextProxy.getValue(key)
 	}
@@ -1332,13 +1050,9 @@ export class ClineProvider extends EventEmitter<ClineProviderEvents> implements 
 		await this.contextProxy.setValues(values)
 	}
 
-	// cwd
-
 	get cwd() {
 		return getWorkspacePath()
 	}
-
-	// dev
 
 	async resetState() {
 		const answer = await vscode.window.showInformationMessage(
@@ -1346,11 +1060,9 @@ export class ClineProvider extends EventEmitter<ClineProviderEvents> implements 
 			{ modal: true },
 			t("common:answers.yes"),
 		)
-
 		if (answer !== t("common:answers.yes")) {
 			return
 		}
-
 		await this.contextProxy.resetAllState()
 		await this.providerSettingsManager.resetAllConfigs()
 		await this.customModesManager.resetCustomModes()
@@ -1359,14 +1071,10 @@ export class ClineProvider extends EventEmitter<ClineProviderEvents> implements 
 		await this.postMessageToWebview({ type: "action", action: "chatButtonClicked" })
 	}
 
-	// logging
-
 	public log(message: string) {
 		this.outputChannel.appendLine(message)
 		console.log(message)
 	}
-
-	// integration tests
 
 	get viewLaunched() {
 		return this.isViewLaunched
@@ -1376,48 +1084,31 @@ export class ClineProvider extends EventEmitter<ClineProviderEvents> implements 
 		return this.getCurrentCline()?.clineMessages || []
 	}
 
-	// Add public getter with any type
 	public getMcpHub(): any | undefined {
 		return this.mcpHub
 	}
 
-	/**
-	 * Returns properties to be included in every telemetry event
-	 * This method is called by the telemetry service to get context information
-	 * like the current mode, API provider, etc.
-	 */
 	public async getTelemetryProperties(): Promise<Record<string, any>> {
 		const { mode, apiConfiguration, language } = await this.getState()
 		const appVersion = this.context.extension?.packageJSON?.version
 		const vscodeVersion = vscode.version
 		const platform = process.platform
-
 		const properties: Record<string, any> = {
 			vscodeVersion,
 			platform,
 		}
-
-		// Add extension version
 		if (appVersion) {
 			properties.appVersion = appVersion
 		}
-
-		// Add language
 		if (language) {
 			properties.language = language
 		}
-
-		// Add current mode
 		if (mode) {
 			properties.mode = mode
 		}
-
-		// Add API provider
 		if (apiConfiguration?.apiProvider) {
 			properties.apiProvider = apiConfiguration.apiProvider
 		}
-
-		// Add model ID if available
 		const currentCline = this.getCurrentCline()
 		if (currentCline?.api) {
 			const { id: modelId } = currentCline.api.getModel()
@@ -1425,11 +1116,9 @@ export class ClineProvider extends EventEmitter<ClineProviderEvents> implements 
 				properties.modelId = modelId
 			}
 		}
-
 		if (currentCline?.diffStrategy) {
 			properties.diffStrategy = currentCline.diffStrategy.getName()
 		}
-
 		return properties
 	}
 }

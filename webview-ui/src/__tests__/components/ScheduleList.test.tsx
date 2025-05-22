@@ -2,6 +2,7 @@ import React from "react";
 import { render, screen, fireEvent } from "@testing-library/react";
 import ScheduleList from "../../components/scheduler/ScheduleList";
 import { Schedule } from "../../components/scheduler/types";
+import { Project } from "../../../../src/shared/ProjectTypes"; // Import Project type
 
 // Mock react-virtuoso to render all items for testing
 jest.mock("react-virtuoso", () => ({
@@ -12,9 +13,15 @@ jest.mock("react-virtuoso", () => ({
   ),
 }));
 
+const mockProjects: Project[] = [
+  { id: "test-project-1", name: "Test Project 1", color: "#112233", directoryPath: "/test/path1", description: "Desc 1", createdAt: "", updatedAt: "" },
+  { id: "test-project-2", name: "Test Project 2", color: "#445566", directoryPath: "/test/path2", description: "Desc 2", createdAt: "", updatedAt: "" },
+];
+
 const schedules: Schedule[] = [
   {
     id: "1",
+    projectId: "test-project-1", // Added projectId
     name: "Morning Routine",
     mode: "focus",
     modeDisplayName: "Focus",
@@ -43,6 +50,7 @@ const schedules: Schedule[] = [
   },
   {
     id: "2",
+    projectId: "test-project-1", // Added projectId
     name: "Evening Review",
     mode: "review",
     modeDisplayName: "Review",
@@ -71,6 +79,7 @@ const schedules: Schedule[] = [
   },
   {
     id: "3",
+    projectId: "test-project-2", // Added projectId
     name: "Activity-Based Task",
     mode: "focus",
     modeDisplayName: "Focus",
@@ -99,6 +108,7 @@ describe("ScheduleList", () => {
     render(
       <ScheduleList
         schedules={schedules}
+        projects={mockProjects}
         onEdit={jest.fn()}
         onDelete={jest.fn()}
         onToggleActive={jest.fn()}
@@ -121,6 +131,8 @@ describe("ScheduleList", () => {
     render(
       <ScheduleListItem
         schedule={schedules[2]} // The Activity-Based Task with requireActivity=true
+        projectName="Test Project Name" // Added
+        projectColor="#aabbcc"      // Added
         onEdit={jest.fn()}
         onDelete={jest.fn()}
         onToggleActive={jest.fn()}
@@ -140,6 +152,7 @@ describe("ScheduleList", () => {
     render(
       <ScheduleList
         schedules={schedules}
+        projects={mockProjects}
         onEdit={onEdit}
         onDelete={jest.fn()}
         onToggleActive={jest.fn()}
@@ -158,6 +171,7 @@ describe("ScheduleList", () => {
     render(
       <ScheduleList
         schedules={schedules}
+        projects={mockProjects}
         onEdit={jest.fn()}
         onDelete={onDelete}
         onToggleActive={jest.fn()}
@@ -177,6 +191,7 @@ describe("ScheduleList", () => {
     render(
       <ScheduleList
         schedules={schedules}
+        projects={mockProjects}
         onEdit={jest.fn()}
         onDelete={jest.fn()}
         onToggleActive={onToggleActive}
@@ -198,6 +213,7 @@ describe("ScheduleList", () => {
     render(
       <ScheduleList
         schedules={schedules}
+        projects={mockProjects}
         onEdit={jest.fn()}
         onDelete={jest.fn()}
         onToggleActive={jest.fn()}

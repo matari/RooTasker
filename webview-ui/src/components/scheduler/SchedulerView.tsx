@@ -1,16 +1,19 @@
 import React, { useState, useEffect, useMemo, useRef } from "react"
 import { Button } from "../../components/ui/button"
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "../../components/ui/tabs"
+import { Tabs, TabsContent } from "../../components/ui/tabs" // TabsList and TabsTrigger are not used
 import { Virtuoso } from "react-virtuoso"
 import { cn } from "../../lib/utils"
 import { useExtensionState } from "../../context/ExtensionStateContext"
-import {
+import { // BaseSchedule is not directly used here, Schedule type from ./types already extends it
 	getAllModes,
 } from "../../../../src/shared/modes"
 import { vscode } from "../../utils/vscode"
-import { Tab, TabContent, TabHeader } from "../common/Tab"
+// import { Tab, TabContent, TabHeader } from "../common/Tab" // Tab component seems unused now
 import { useAppTranslation } from "../../i18n/TranslationContext"
 import ConfirmationDialog from "../ui/confirmation-dialog"
+import SplashPage from "../common/SplashPage";
+import type { Project } from "../../../../src/shared/ProjectTypes"; // Import Project
+import type { NavigationPayload } from "../../types"; // Corrected import path
 
 // Import new components
 import ScheduleForm from "./ScheduleForm"
@@ -31,21 +34,29 @@ const formatDateWithoutYearAndSeconds = (dateString: string) => {
 }
 
 type SchedulerViewProps = {
-	onDone: () => void
+	onDone: () => void;
+	initialAction?: NavigationPayload | null;
+	onInitialActionConsumed?: () => void;
 }
 
-const SchedulerView = ({ onDone }: SchedulerViewProps) => {
+const SchedulerView = ({ onDone, initialAction, onInitialActionConsumed }: SchedulerViewProps) => {
 	const { t } = useAppTranslation()
-	const { customModes } = useExtensionState()
+	const { customModes, projects, projectSchedules, activeProjectId, setActiveProjectId } = useExtensionState();
 	
 	// Add logging for component initialization
-	console.log("SchedulerView component initialized")
+	console.log("SchedulerView component initialized, activeProjectId:", activeProjectId);
 	
 	// Tab state
-	const [activeTab, setActiveTab] = useState<string>("schedules")
+	const [activeTab, setActiveTab] = useState<string>("schedules") // "schedules" or "edit"
 	
-	// Schedule list state
-	const [schedules, setSchedules] = useState<Schedule[]>([])
+	// Schedule list state - now derived from context based on activeProjectId
+	const schedules: Schedule[] = useMemo(() => {
+		if (activeProjectId && projectSchedules && projectSchedules[activeProjectId]) {
+			return projectSchedules[activeProjectId] as Schedule[]; // Cast as Schedule (UI type)
+		}
+		return [];
+	}, [activeProjectId, projectSchedules]);
+
 	const [selectedScheduleId, setSelectedScheduleId] = useState<string | null>(null)
 	
 	// Sorting state
@@ -87,124 +98,92 @@ const SchedulerView = ({ onDone }: SchedulerViewProps) => {
 	const scheduleFormRef = useRef<ScheduleFormHandle>(null);
 	const [isFormValid, setIsFormValid] = useState(false);
 	// No need for default start time effect - handled in ScheduleForm
+	// No need for default start time effect - handled in ScheduleForm
 	
-	// Load schedules from file
-	useEffect(() => {
-		loadSchedules()
-		
-		// Set up event listener for file content messages
-		const handleMessage = (event: MessageEvent) => {
-			const message = event.data;
-			
-			// Check if this is a response with file content
-			if (message.type === "fileContent" && message.path === "./.rootasker/schedules.json") {
-				try {
-					const data = JSON.parse(message.content);
-					if (data && Array.isArray(data.schedules)) {
-						console.log("Received schedules from file:", data.schedules);
-						setSchedules(data.schedules);
-					}
-				} catch (e) {
-					console.error("Failed to parse schedules from file content message:", e);
-				}
-			}
-			
-			// Listen for schedulesUpdated message from extension
-			// This will be triggered when the .roo/schedules.json file is updated externally
-			if (message.type === "schedulesUpdated") {
-				console.log("Received schedulesUpdated message, reloading schedules");
-				loadSchedules();
-			}
-		};
-		
-		// Add the event listener
-		window.addEventListener('message', handleMessage);
-		
-		// Clean up the event listener when component unmounts
-		return () => {
-			window.removeEventListener('message', handleMessage);
-		};
-	}, [])
-	
-	// Load schedules from .roo/schedules.json
-	const loadSchedules = async () => {
-		try {
-			console.log("Requesting schedules from extension")
-			
-			// Request the schedules file content from the extension
-			vscode.postMessage({
-				type: "openFile",
-				text: "./.rootasker/schedules.json",
-				values: { open: false }
-			})
-			
-		} catch (error) {
-			console.error("Failed to load schedules:", error);
-		}
-	}
+	// useEffect to load schedules is no longer needed here as schedules are derived from context.
+	// The context (ExtensionStateContext) will update when `projectSchedules` changes.
+	// The `schedulesUpdated` message from the backend will trigger a state update in ClineProvider,
+	// which then propagates to the webview context.
 
-	// Save schedule to file
-	const saveSchedule = (formData: Omit<Schedule, 'id' | 'createdAt' | 'updatedAt' | 'modeDisplayName'>) => {
+	useEffect(() => {
+		if (initialAction?.view === 'form' && onInitialActionConsumed) {
+			resetForm(); // Clear any previous editing state
+			if (initialAction.itemId && initialAction.projectId) {
+				// Editing an existing schedule
+				console.log("SchedulerView: Processing initialAction to EDIT form for schedule:", initialAction.itemId, "in project:", initialAction.projectId);
+				const projectSchedulesMap = projectSchedules || {};
+				const schedulesForProject = projectSchedulesMap[initialAction.projectId] || [];
+				const scheduleToEdit = schedulesForProject.find(s => s.id === initialAction.itemId);
+				if (scheduleToEdit) {
+					setSelectedScheduleId(scheduleToEdit.id);
+					setInitialFormData({ ...scheduleToEdit }); // Populate form with existing data
+					setIsEditing(true);
+					setActiveTab("edit");
+				} else {
+					console.warn(`SchedulerView: Schedule with id ${initialAction.itemId} not found in project ${initialAction.projectId}`);
+					// Fallback to new schedule form for the project, or handle error
+					setInitialFormData({ projectId: initialAction.projectId });
+					setIsEditing(false);
+					setActiveTab("edit");
+				}
+			} else if (initialAction.projectId) {
+				// Creating a new schedule for a specific project
+				console.log("SchedulerView: Processing initialAction to CREATE new form for project:", initialAction.projectId);
+				setInitialFormData({ projectId: initialAction.projectId });
+				setIsEditing(false);
+				setActiveTab("edit");
+			} else {
+	       // Creating a new schedule without a pre-selected project (form will require selection)
+	       console.log("SchedulerView: Processing initialAction to CREATE new form (no project pre-selected)");
+	       setIsEditing(false);
+	       setActiveTab("edit");
+	     }
+			onInitialActionConsumed(); // Notify App.tsx that the action has been processed
+		}
+	}, [initialAction, onInitialActionConsumed, projectSchedules]);
+
+	// Save schedule (now to a project)
+	// formData now includes projectId from the ScheduleForm
+	const saveSchedule = (formData: Omit<Schedule, 'id' | 'createdAt' | 'updatedAt' | 'modeDisplayName'> & { projectId: string }) => {
 		if (!formData.name.trim()) {
-			// Show error or validation message
-			console.error("Schedule name cannot be empty")
-			return
+			console.error("Schedule name cannot be empty");
+			return;
+		}
+		if (!formData.projectId) {
+			console.error("Project ID is missing in form data. Cannot save schedule.");
+			// This should ideally be caught by form validation
+			return;
 		}
 		
-		// Get the mode display name from the available modes
-		const selectedModeConfig = availableModes.find(mode => mode.slug === formData.mode)
-		const modeDisplayName = selectedModeConfig?.name || formData.mode
-		
-		const now = new Date().toISOString()
-		let updatedSchedules = [...schedules]
-		
+		const selectedModeConfig = availableModes.find(mode => mode.slug === formData.mode);
+		const modeDisplayName = selectedModeConfig?.name || formData.mode;
+
+		// The schedulePayload will already have projectId from the form.
+		const schedulePayload = { ...formData, modeDisplayName };
+
 		if (isEditing && selectedScheduleId) {
-			// Update existing schedule
-			updatedSchedules = updatedSchedules.map(schedule =>
-				schedule.id === selectedScheduleId
-					? {
-						...schedule,
-						...formData,
-						modeDisplayName,
-						updatedAt: now
-					}
-					: schedule
-			)
-		} else {
-			// Create new schedule
-			const newSchedule: Schedule = {
-				id: Date.now().toString(),
-				...formData,
-				modeDisplayName,
-				createdAt: now,
-				updatedAt: now
+			const existingSchedule = schedules.find(s => s.id === selectedScheduleId);
+			if (existingSchedule) {
+				// When updating, the projectId in schedulePayload (from form) should match existingSchedule.projectId
+				// or we need a mechanism to move schedules (not in scope for this change).
+				// For now, assume projectId from form is the correct one for the update.
+				vscode.postMessage({
+					type: "updateScheduleInProject",
+					projectId: schedulePayload.projectId, // Use projectId from form for targeting project
+					data: { ...existingSchedule, ...schedulePayload } as Schedule, // Ensure all fields for BaseSchedule
+				});
 			}
-			
-			updatedSchedules.push(newSchedule)
+		} else {
+			// Create new schedule, use projectId from form
+			vscode.postMessage({
+				type: "addScheduleToProject",
+				projectId: schedulePayload.projectId, // Use projectId from form for targeting project
+				data: schedulePayload, // data already contains projectId
+			});
 		}
 		
-		
-		// Save to file using openFile message type with create option
-		const fileContent = JSON.stringify({ schedules: updatedSchedules }, null, 2)
-		console.log("Saving schedules to file:", fileContent)
-		
-		// First update local state
-		setSchedules(updatedSchedules)
-		
-		// Then save to file and notify backend after file is saved
-		// This ensures the file is written before the backend tries to read it
-		vscode.postMessage({
-		  type: "openFile",
-		  text: "./.rootasker/schedules.json",
-		  values: {
-		    create: true,
-		    content: fileContent,
-		    callback: "schedulesUpdated" // Add callback to trigger schedulesUpdated after file is saved
-		  }
-		})
-		
-		resetForm()
-		setActiveTab("schedules")
+		resetForm();
+		setActiveTab("schedules");
 	}
 
 
@@ -244,31 +223,20 @@ const SchedulerView = ({ onDone }: SchedulerViewProps) => {
 		}
 	}
 	
-	// Delete schedule
+	// Delete schedule (from a project)
 	const deleteSchedule = (scheduleId: string) => {
-		const updatedSchedules = schedules.filter(s => s.id !== scheduleId)
-		
-		// Save to file
-		const fileContent = JSON.stringify({ schedules: updatedSchedules }, null, 2)
-		console.log("Saving updated schedules to file after deletion:", fileContent)
-		
-		// Update state first
-		setSchedules(updatedSchedules)
-		
-		// Then save to file with callback to reload schedules
+		if (!activeProjectId) {
+			console.error("Cannot delete schedule: No active project selected.");
+			return;
+		}
 		vscode.postMessage({
-		  type: "openFile",
-		  text: "./.rootasker/schedules.json",
-		  values: {
-		    create: true,
-		    content: fileContent,
-		    callback: "schedulesUpdated" // Add callback to trigger schedulesUpdated after file is saved
-		  }
-		})
-		
-		// If we were editing this schedule, reset the form
+			type: "deleteScheduleFromProject",
+			projectId: activeProjectId,
+			scheduleId: scheduleId,
+		});
+
 		if (selectedScheduleId === scheduleId) {
-			resetForm()
+			resetForm();
 		}
 	}
 	
@@ -279,62 +247,45 @@ const SchedulerView = ({ onDone }: SchedulerViewProps) => {
 		setIsEditing(false)
 	}
 	
-	// Create new schedule
+	// Create new schedule (for the active project, or allow form to select)
 	const createNewSchedule = () => {
-		resetForm()
-		setActiveTab("edit")
+		// activeProjectId will be used by ScheduleForm to pre-select the project if set.
+		// If not set, ScheduleForm's dropdown will be mandatory.
+		// No need for a hard block here anymore as the form handles project selection.
+		resetForm();
+		// Pass activeProjectId to initialFormData for the form to pick up
+		setInitialFormData(prev => ({ ...prev, projectId: activeProjectId || undefined }));
+		setActiveTab("edit");
 	}
-	// Validation is now handled in ScheduleForm
 
 	const onRunNowHandler = (scheduleId: string) => {
+		if (!activeProjectId) {
+			console.error("Cannot run schedule: No active project selected.");
+			// Optionally, show a user-facing error message here
+			return;
+		}
 		vscode.postMessage({
 			type: "runScheduleNow",
 			scheduleId: scheduleId,
+			projectId: activeProjectId, // Add projectId to the message
 		});
 	};
 	
 	// (Sorting logic and helper moved to ScheduleSortControl)
 
 	return (
-		<div className="h-full flex flex-col"> {/* Replaced Tab with a div */}
-			{/* Header-like section for buttons, moved inside */}
-			<div className="flex justify-end items-center p-1 border-b border-vscode-panel-border mb-2">
-				{activeTab === "edit" ? (
-					<div className="flex gap-2">
-						<Button
-							variant="secondary"
-							size="sm"
-							onClick={() => {
-								resetForm();
-								setActiveTab("schedules");
-							}}
-							data-testid="cancel-edit-schedule-button"
-						>
-							Cancel
-						</Button>
-						<Button
-							size="sm"
-							onClick={() => {
-								scheduleFormRef.current?.submitForm();
-							}}
-							disabled={!isFormValid}
-							data-testid="save-schedule-button"
-						>
-							Save Schedule
-						</Button>
-					</div>
-				) : (
-					<Button size="sm" onClick={createNewSchedule} data-testid="create-new-schedule-button">Add Task</Button>
-				)}
-			</div>
+		<div className="h-full flex flex-col">
+			{/* Header section removed as per new instructions */}
 			
 			{/* Inner Tabs for list/edit form */}
-			<Tabs value={activeTab} onValueChange={setActiveTab} className="w-full h-full flex flex-col flex-grow">
-				<TabsContent value="schedules" className="space-y-2 flex-1 overflow-auto">
-						{schedules.length === 0 ? (
+			<Tabs value={activeTab} onValueChange={setActiveTab} className="w-full h-full flex flex-col flex-grow pt-2"> {/* Added pt-2 */}
+				<TabsContent value="schedules" className="space-y-2 flex-1 overflow-auto px-2"> {/* Added px-2 */}
+						{!activeProjectId ? (
 							<div className="text-center py-8 text-vscode-descriptionForeground">
-								No schedules found. Create your first schedule to get started.
+								Please select or create a project to manage schedules.
 							</div>
+						) : schedules.length === 0 ? (
+							<SplashPage />
 						) : (
 							<div className="h-full flex flex-col">
 								<ScheduleSortControl
@@ -347,45 +298,45 @@ const SchedulerView = ({ onDone }: SchedulerViewProps) => {
 									{(sortedSchedules) => (
 										<ScheduleList
 											schedules={sortedSchedules}
+											projects={projects || []} // Pass projects array, defaulting to empty if undefined
 											onEdit={editSchedule}
 											onDelete={(id) => {
 												setScheduleToDelete(id);
 												setDialogOpen(true);
 											}}
 											onToggleActive={(id, active) => {
-												// 1. Call backend to toggle schedule active state
-												vscode.postMessage({
-													type: "toggleScheduleActive",
-													scheduleId: id,
-													active,
-												});
-												// 2. Update local state and storage
-												const updatedSchedules = schedules.map(s =>
-													s.id === id ? { ...s, active } : s
-												);
-												
-												const fileContent = JSON.stringify({ schedules: updatedSchedules }, null, 2);
-												console.log("Saving updated schedules to file after toggle active:", fileContent);
-												// Update state first
-												setSchedules(updatedSchedules);
-												// Then save to file with callback to reload schedules
-												vscode.postMessage({
-													type: "openFile",
-													text: "./.rootasker/schedules.json",
-													values: {
-														create: true,
-														content: fileContent,
-														callback: "schedulesUpdated"
-													}
-												});
+												if (!activeProjectId) return;
+												const scheduleToUpdate = schedules.find(s => s.id === id);
+												if (scheduleToUpdate) {
+													vscode.postMessage({
+														type: "updateScheduleInProject",
+														projectId: activeProjectId,
+														data: { ...scheduleToUpdate, active, projectId: activeProjectId } as Schedule,
+													});
+												}
 											}}
 											onRunNow={onRunNowHandler}
 											onDuplicate={(scheduleId) => {
-												vscode.postMessage({
-													type: "duplicateSchedule",
-													scheduleId: scheduleId,
-												});
-												// The webview message handler will update the file and trigger a refresh
+												if (!activeProjectId) return;
+												// Backend needs to handle duplication within the project context
+												// For now, this might require a new message type like "duplicateScheduleInProject"
+												// or the existing "duplicateSchedule" needs to be aware of activeProjectId.
+												// Let's assume for now backend handles it via a generic duplicate message
+												// and we might need to adjust if it needs projectId explicitly.
+												// OR, we can implement duplication on the frontend and then save as new.
+												const scheduleToDuplicate = schedules.find(s => s.id === scheduleId);
+												if (scheduleToDuplicate) {
+													const { id, createdAt, updatedAt, nextExecutionTime, lastExecutionTime, lastSkippedTime, lastTaskId, executionCount, projectId: projectToDuplicateIn, ...duplicableData } = scheduleToDuplicate;
+													// Ensure the duplicated schedule is associated with a project.
+													// If activeProjectId is available and different, it might imply duplicating to current project.
+													// For simplicity, duplicate within the same project as the original.
+													saveSchedule({
+														...duplicableData,
+														projectId: projectToDuplicateIn, // Explicitly set projectId
+														name: `${duplicableData.name} (Copy)`,
+														active: false, // Duplicates are inactive by default
+													} as Omit<Schedule, 'id' | 'createdAt' | 'updatedAt' | 'modeDisplayName'> & { projectId: string });
+												}
 											}}
 											onResumeTask={(taskId) => {
 												console.log("Sending resumeTask message to extension");
@@ -402,7 +353,7 @@ const SchedulerView = ({ onDone }: SchedulerViewProps) => {
 						)}
 					</TabsContent>
 						
-					<TabsContent value="edit">
+					<TabsContent value="edit" className="flex-1 overflow-auto px-2"> {/* Added px-2 and flex-1 */}
 						<ScheduleForm
 							ref={scheduleFormRef}
 							initialData={initialFormData}
@@ -415,6 +366,32 @@ const SchedulerView = ({ onDone }: SchedulerViewProps) => {
 							}}
 							onValidityChange={setIsFormValid}
 						/>
+						      {/* Save and Cancel buttons for the form */}
+						      {activeTab === "edit" && (
+						        <div className="flex justify-end gap-2 mt-4 p-1 border-t border-vscode-panel-border">
+						          <Button
+						            variant="secondary"
+						            size="sm"
+						            onClick={() => {
+						              resetForm();
+						              setActiveTab("schedules");
+						            }}
+						            data-testid="cancel-edit-schedule-button"
+						          >
+						            Cancel
+						          </Button>
+						          <Button
+						            size="sm"
+						            onClick={() => {
+						              scheduleFormRef.current?.submitForm();
+						            }}
+						            disabled={!isFormValid}
+						            data-testid="save-schedule-button"
+						          >
+						            Save Schedule
+						          </Button>
+						        </div>
+						      )}
 					</TabsContent>
 				</Tabs>
 			{/* Confirmation Dialog for Schedule Deletion, moved to be a sibling of Tabs */}

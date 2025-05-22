@@ -5,9 +5,10 @@ import * as parser from 'cron-parser';
 import { getWorkspacePath } from '../../utils/path';
 import { fileExistsAtPath } from '../../utils/fs';
 import { RooService } from './RooService';
+import type { BaseSchedule } from '../../shared/ProjectTypes'; // Added import
 
 export interface Schedule { // Added export
-  id: string;
+	id: string;
   name: string;
   mode: string;
   modeDisplayName?: string;
@@ -842,11 +843,26 @@ export class SchedulerService {
       this.log(`Error during "Run Now" for schedule "${schedule.name}": ${error instanceof Error ? error.message : String(error)}`);
       vscode.window.showErrorMessage(`Failed to run task "${schedule.name}" manually: ${error instanceof Error ? error.message : String(error)}`);
     }
-  }
-
-  public async reloadSchedulesAndReschedule(): Promise<void> {
+   }
+  
+   public async runProjectSchedule(schedule: BaseSchedule): Promise<void> {
+    this.log(`Running project schedule: "${schedule.name}" (ID: ${schedule.id}) from project ID ${schedule.projectId}`);
+    try {
+    	// We call processTask directly to execute the schedule's defined task
+    	const taskId = await this.processTask(schedule.mode, schedule.taskInstructions);
+    	this.log(`"Run Now" for project schedule "${schedule.name}" (Project: ${schedule.projectId}) started task ${taskId}.`);
+    	vscode.window.showInformationMessage(`Task "${schedule.name}" (from project) started manually.`);
+    	// Note: This ad-hoc execution does not update lastExecutionTime or other schedule properties
+    	// as it's an out-of-band execution. Regular scheduling remains unaffected.
+    } catch (error) {
+    	this.log(`Error during "Run Now" for project schedule "${schedule.name}" (Project: ${schedule.projectId}): ${error instanceof Error ? error.message : String(error)}`);
+    	vscode.window.showErrorMessage(`Failed to run task "${schedule.name}" (from project) manually: ${error instanceof Error ? error.message : String(error)}`);
+    }
+   }
+  
+   public async reloadSchedulesAndReschedule(): Promise<void> {
     this.log("Reloading schedules and rescheduling timers due to external update");
     await this.loadSchedules();
     this.setupTimers();
+   }
   }
-}

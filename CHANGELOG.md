@@ -1,9 +1,17 @@
 # Changelog
 
+## [1.1.0] - 2025-05-22
+
+### Added
+- Introduced Projects feature for global organization of schedules and watchers.
+- Data migration for existing workspace-local schedules/watchers into the new Projects system.
+- Ability to create, edit, delete, and select active projects.
+- Schedules and Watchers are now managed within the context of the active project.
+- Added 'Add Schedule' and 'Add Watcher' shortcuts to Project Cards for quick navigation.
+
 ## [1.0.0] - 2025-05-16
 
 ### Added
-- Rebranded from Roo Scheduler to RooTasker
 - Added file watcher functionality to monitor directories for changes
 - Implemented MCP server integration for AI assistant control
 - Created tabbed interface for different schedule types (one-time, interval, cron)

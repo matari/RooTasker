@@ -2,8 +2,12 @@ import React, { useState } from "react"; // Added useState
 import { Button } from "../../components/ui/button";
 import { Schedule } from "./types";
 
+import ProjectColorDot from "../projects/ProjectColorDot"; // Import ProjectColorDot
+
 type ScheduleListItemProps = {
   schedule: Schedule;
+  projectName?: string; // Added project name
+  projectColor?: string; // Added project color
   onEdit: (id: string) => void;
   onDelete: (id: string) => void;
   onToggleActive: (id: string, active: boolean) => void;
@@ -15,6 +19,8 @@ type ScheduleListItemProps = {
 
 const ScheduleListItem: React.FC<ScheduleListItemProps> = ({
   schedule,
+  projectName, // Added
+  projectColor, // Added
   onEdit,
   onDelete,
   onToggleActive,
@@ -78,12 +84,18 @@ const ScheduleListItem: React.FC<ScheduleListItemProps> = ({
     >
       <div className="flex items-start p-4 gap-3"> {/* Increased padding and gap */}
         <div className="flex-1 min-w-0"> {/* Added min-w-0 for better truncation inside flex */}
-          <div className="flex justify-between items-center mb-1"> {/* Added mb-1 for spacing */}
-            <div className="flex items-center min-w-0"> {/* Wrapper for icon and name for truncation */}
-              <span className={`codicon ${getScheduleIcon(schedule)} mr-2 text-vscode-descriptionForeground`} title={`Type: ${schedule.scheduleKind}`}></span>
+          <div className="flex justify-between items-center mb-1">
+            <div className="flex items-center min-w-0 flex-grow"> {/* Allow this section to grow and truncate */}
+              {projectColor && <ProjectColorDot color={projectColor} size="sm" />}
+              {projectName && (
+                <span className="text-vscode-descriptionForeground text-sm mr-1 truncate" title={projectName}>
+                  {projectName}:
+                </span>
+              )}
+              <span className={`codicon ${getScheduleIcon(schedule)} mr-1.5 text-vscode-descriptionForeground flex-shrink-0`} title={`Type: ${schedule.scheduleKind}`}></span>
               <span className="text-vscode-foreground font-medium text-base truncate" title={schedule.name}>{schedule.name}</span>
             </div>
-            <div className="flex flex-row gap-1 items-center flex-shrink-0"> {/* Added flex-shrink-0 */}
+            <div className="flex flex-row gap-1 items-center flex-shrink-0">
               {/* Active/Inactive Status Indicator (Play/Pause Icons) */}
               <Button
                 variant="ghost"

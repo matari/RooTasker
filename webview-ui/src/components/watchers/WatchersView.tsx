@@ -1,21 +1,35 @@
-import React, { useState, useEffect, useMemo, useRef } from "react";
+import React, { useState, useMemo, useRef, useEffect } from "react"; // Added useEffect
 import { Button } from "../../components/ui/button";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "../../components/ui/tabs";
+import { Tabs, TabsContent } from "../../components/ui/tabs";
 import { useExtensionState } from "../../context/ExtensionStateContext";
+// Plus icon is no longer used here as the add button is global
 import { vscode } from "../../utils/vscode";
-import { Tab, TabContent, TabHeader } from "../common/Tab";
+// import { Tab, TabContent, TabHeader } from "../common/Tab"; // Tab seems unused
 import { Watcher } from "./types";
-import WatcherForm from "./WatcherForm"; // Uncommented
-import WatcherList from "./WatcherList"; // Uncommented
-import type { WatcherFormHandle } from "./WatcherForm"; // Uncommented
+import WatcherForm from "./WatcherForm";
+import WatcherList from "./WatcherList";
+import type { WatcherFormHandle } from "./WatcherForm";
 import ConfirmationDialog from "../ui/confirmation-dialog";
 import { getAllModes } from "../../../../src/shared/modes";
+import SplashPage from "../common/SplashPage";
+import type { Project } from "../../../../src/shared/ProjectTypes"; // Import Project
+import type { NavigationPayload } from "../../types"; // Import NavigationPayload
 
+interface WatchersViewProps {
+  initialAction?: NavigationPayload | null;
+  onInitialActionConsumed?: () => void;
+}
 
-const WatchersView: React.FC = () => {
-  const { customModes } = useExtensionState();
-  const [activeTab, setActiveTab] = useState<string>("watchers"); // "watchers" or "edit"
-  const [watchers, setWatchers] = useState<Watcher[]>([]);
+const WatchersView: React.FC<WatchersViewProps> = ({ initialAction, onInitialActionConsumed }) => {
+  const { customModes, projects, projectWatchers, activeProjectId, setActiveProjectId } = useExtensionState();
+  const [activeTab, setActiveTab] = useState<string>("watchers");
+
+  const watchers: Watcher[] = useMemo(() => {
+    if (activeProjectId && projectWatchers && projectWatchers[activeProjectId]) {
+      return projectWatchers[activeProjectId] as Watcher[];
+    }
+    return [];
+  }, [activeProjectId, projectWatchers]);
   const [selectedWatcherId, setSelectedWatcherId] = useState<string | null>(null);
   const [isEditing, setIsEditing] = useState<boolean>(false);
   const [initialFormData, setInitialFormData] = useState<Partial<Watcher>>({});
@@ -39,49 +53,75 @@ const WatchersView: React.FC = () => {
       hour12: true
     });
   };
-
+  
   useEffect(() => {
-    loadWatchers();
-
-    const handleMessage = (event: MessageEvent) => {
-      const message = event.data;
-      if (message.type === "fileContent" && message.path === "./.rootasker/watchers.json") {
-        try {
-          const data = JSON.parse(message.content);
-          if (data && Array.isArray(data.watchers)) {
-            setWatchers(data.watchers);
-          }
-        } catch (e) {
-          console.error("Failed to parse watchers from file content message:", e);
+    if (initialAction?.view === 'form' && onInitialActionConsumed) {
+      resetForm(); // Clear any previous editing state
+      if (initialAction.itemId && initialAction.projectId) {
+        // Editing an existing watcher
+        console.log("WatchersView: Processing initialAction to EDIT form for watcher:", initialAction.itemId, "in project:", initialAction.projectId);
+        const projectWatchersMap = projectWatchers || {};
+        const watchersForProject = projectWatchersMap[initialAction.projectId] || [];
+        const watcherToEdit = watchersForProject.find(w => w.id === initialAction.itemId);
+        if (watcherToEdit) {
+          setSelectedWatcherId(watcherToEdit.id);
+          setInitialFormData({ ...watcherToEdit }); // Populate form with existing data
+          setIsEditing(true);
+          setActiveTab("edit");
+        } else {
+          console.warn(`WatchersView: Watcher with id ${initialAction.itemId} not found in project ${initialAction.projectId}`);
+          // Fallback to new watcher form for the project, or handle error
+          setInitialFormData({ projectId: initialAction.projectId });
+          setIsEditing(false);
+          setActiveTab("edit");
         }
+      } else if (initialAction.projectId) {
+        // Creating a new watcher for a specific project
+        console.log("WatchersView: Processing initialAction to CREATE new form for project:", initialAction.projectId);
+        setInitialFormData({ projectId: initialAction.projectId });
+        setIsEditing(false);
+        setActiveTab("edit");
+      } else {
+        // Creating a new watcher without a pre-selected project (form will require selection)
+        // Use activeProjectId if available from context as a default for new items
+        console.log("WatchersView: Processing initialAction to CREATE new form (project from active context or none):", activeProjectId);
+        setInitialFormData(prev => ({ ...prev, projectId: activeProjectId || undefined }));
+        setIsEditing(false);
+        setActiveTab("edit");
       }
-      if (message.type === "watchersUpdated") { // Assuming a similar notification mechanism
-        loadWatchers();
-      }
-    };
-    window.addEventListener('message', handleMessage);
-    return () => window.removeEventListener('message', handleMessage);
-  }, []);
+      onInitialActionConsumed(); // Notify App.tsx that the action has been processed
+    }
+  }, [initialAction, onInitialActionConsumed, projectWatchers, activeProjectId]);
 
-  const loadWatchers = () => {
-    vscode.postMessage({
-      type: "openFile", // Re-use openFile or create a dedicated message type
-      text: "./.rootasker/watchers.json",
-      values: { open: false }
-    });
-  };
-
-  const saveWatcher = (formData: Omit<Watcher, 'id' | 'createdAt' | 'updatedAt' | 'modeDisplayName'>) => {
-    const selectedModeConfig = availableModes.find(mode => mode.slug === formData.mode);
-    const modeDisplayName = selectedModeConfig?.name || formData.mode;
-    
-    vscode.postMessage({
-      type: isEditing ? "updateWatcher" : "addWatcher", // Dedicated message types
-      watcherId: (isEditing && selectedWatcherId) ? selectedWatcherId : undefined,
-      data: { ...formData, modeDisplayName },
-    });
-    resetForm();
-    setActiveTab("watchers");
+  const saveWatcher = (formData: Omit<Watcher, 'id' | 'createdAt' | 'updatedAt' | 'modeDisplayName'> & { projectId: string }) => {
+  	if (!formData.projectId) {
+  		console.error("Project ID is missing in form data. Cannot save watcher.");
+  		return;
+  	}
+  	const selectedModeConfig = availableModes.find(mode => mode.slug === formData.mode);
+  	const modeDisplayName = selectedModeConfig?.name || formData.mode;
+  	
+  	// watcherPayload will already have projectId from the form.
+  	const watcherPayload = { ...formData, modeDisplayName };
+ 
+  	if (isEditing && selectedWatcherId) {
+  		const existingWatcher = watchers.find(w => w.id === selectedWatcherId);
+  		if (existingWatcher) {
+  			vscode.postMessage({
+  				type: "updateWatcherInProject",
+  				projectId: watcherPayload.projectId, // Use projectId from form for targeting
+  				data: { ...existingWatcher, ...watcherPayload } as Watcher,
+  			});
+  		}
+  	} else {
+  		vscode.postMessage({
+  			type: "addWatcherToProject",
+  			projectId: watcherPayload.projectId, // Use projectId from form for targeting
+  			data: watcherPayload, // data already contains projectId
+  		});
+  	}
+  	resetForm();
+  	setActiveTab("watchers");
   };
 
   const editWatcher = (watcherId: string) => {
@@ -94,10 +134,15 @@ const WatchersView: React.FC = () => {
     }
   };
 
-  const deleteWatcher = (watcherIdToDelete: string) => { // Renamed parameter to avoid conflict
+  const deleteWatcher = (watcherIdToDelete: string) => {
+    if (!activeProjectId) {
+      console.error("Cannot delete watcher: No active project selected.");
+      return;
+    }
     vscode.postMessage({
-      type: "deleteWatcher",
-      watcherId: watcherIdToDelete, // Changed id to watcherId
+      type: "deleteWatcherFromProject",
+      projectId: activeProjectId,
+      watcherId: watcherIdToDelete,
     });
     if (selectedWatcherId === watcherIdToDelete) {
       resetForm();
@@ -111,90 +156,103 @@ const WatchersView: React.FC = () => {
   };
 
   const createNewWatcher = () => {
-    resetForm();
-    setActiveTab("edit");
+  	// activeProjectId will be used by WatcherForm to pre-select the project if set.
+  	// If not set, WatcherForm's dropdown will be mandatory.
+  	resetForm();
+  	setInitialFormData(prev => ({ ...prev, projectId: activeProjectId || undefined }));
+  	setActiveTab("edit");
   };
   
-  const toggleWatcherActiveState = (watcherIdToToggle: string, currentActiveState: boolean | undefined) => { // Renamed parameter
-    vscode.postMessage({
-        type: "toggleWatcherActive",
-        watcherId: watcherIdToToggle, // Changed id to watcherId
-        active: !(currentActiveState !== false), // if undefined or true, set to false. if false, set to true.
-    });
+  const toggleWatcherActiveState = (watcherIdToToggle: string, currentActiveState: boolean | undefined) => {
+    if (!activeProjectId) return;
+    const watcherToUpdate = watchers.find(w => w.id === watcherIdToToggle);
+    if (watcherToUpdate) {
+      vscode.postMessage({
+          type: "updateWatcherInProject",
+          projectId: activeProjectId,
+          data: { ...watcherToUpdate, active: !(currentActiveState !== false), projectId: activeProjectId } as Watcher,
+      });
+    }
   };
 
   return (
-    <div className="h-full flex flex-col"> {/* Replaced Tab with a div */}
-      {/* Header-like section for buttons, moved inside */}
-      <div className="flex justify-end items-center p-1 border-b border-vscode-panel-border mb-2">
-        {activeTab === "edit" ? (
-          <div className="flex gap-2">
-            <Button
-              variant="secondary"
-              size="sm"
-              onClick={() => {
-                resetForm();
-                setActiveTab("watchers");
-              }}
-            >
-              Cancel
-            </Button>
-            <Button
-              size="sm"
-              onClick={() => watcherFormRef.current?.submitForm()}
-              disabled={!isFormValid} 
-            >
-              Save Watcher
-            </Button>
-          </div>
-        ) : (
-          <Button size="sm" onClick={createNewWatcher}>Add Watcher</Button>
-        )}
-      </div>
+    <div className="h-full flex flex-col">
+      {/* Header section removed as per new instructions */}
       
       {/* Inner Tabs for list/edit form */}
-      <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full h-full flex flex-col flex-grow">
-        <TabsContent value="watchers" className="space-y-2 flex-1 overflow-auto">
-            {watchers.length === 0 ? (
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full h-full flex flex-col flex-grow pt-2"> {/* Added pt-2 for spacing */}
+        <TabsContent value="watchers" className="space-y-2 flex-1 overflow-auto px-2"> {/* Added px-2 */}
+            {!activeProjectId ? (
               <div className="text-center py-8 text-vscode-descriptionForeground">
-                No watchers configured. Create your first watcher.
+                Please select or create a project to manage watchers.
               </div>
+            ) : watchers.length === 0 ? (
+              <SplashPage />
             ) : (
               <div className="h-full flex flex-col">
                 <WatcherList
                   watchers={watchers}
+                  projects={projects || []} // Pass projects array
                   onEdit={editWatcher}
                   onDelete={(id) => {
                     setWatcherToDelete(id);
                     setDialogOpen(true);
                   }}
                   onDuplicate={(watcherId) => {
-                    vscode.postMessage({
-                      type: "duplicateWatcher",
-                      watcherId: watcherId,
-                    });
-                    // The webview message handler will update the file and trigger a refresh
-                  }}
-                  onToggleActive={toggleWatcherActiveState}
+                    if (!activeProjectId) return;
+                    const watcherToDuplicate = watchers.find(w => w.id === watcherId);
+                    if (watcherToDuplicate) {
+                    	const { id, createdAt, updatedAt, lastTriggeredTime, lastTaskId, projectId: projectToDuplicateIn, ...duplicableData } = watcherToDuplicate;
+                    	saveWatcher({
+                    		...duplicableData,
+                    		projectId: projectToDuplicateIn, // Explicitly set projectId
+                    		name: `${duplicableData.name} (Copy)`,
+                    		active: false, // Duplicates are inactive by default
+                    	} as Omit<Watcher, 'id' | 'createdAt' | 'updatedAt' | 'modeDisplayName'> & { projectId: string });
+                    }
+                   }}
+                   onToggleActive={toggleWatcherActiveState}
                   onResumeTask={(taskId) => vscode.postMessage({ type: "resumeTask", taskId })}
                   formatDate={formatDate}
                 />
               </div>
             )}
           </TabsContent>
-          <TabsContent value="edit" className="mt-4">
+          <TabsContent value="edit" className="flex-1 overflow-auto px-2"> {/* Added px-2 and flex-1, removed mt-4 */}
             <WatcherForm
               ref={watcherFormRef}
               initialData={initialFormData}
               isEditing={isEditing}
               availableModes={availableModes}
               onSave={saveWatcher}
-              onCancel={() => {
+              onCancel={() => { // This onCancel is for the form itself, if it has one.
                 resetForm();
                 setActiveTab("watchers");
               }}
               onValidityChange={setIsFormValid}
             />
+            {/* Save and Cancel buttons for the form */}
+            {activeTab === "edit" && (
+              <div className="flex justify-end gap-2 mt-4 p-1 border-t border-vscode-panel-border">
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => {
+                    resetForm();
+                    setActiveTab("watchers");
+                  }}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  size="sm"
+                  onClick={() => watcherFormRef.current?.submitForm()}
+                  disabled={!isFormValid}
+                >
+                  Save Watcher
+                </Button>
+              </div>
+            )}
           </TabsContent>
         </Tabs>
       {/* Confirmation Dialog for Watcher Deletion, moved to be a sibling of Tabs */}

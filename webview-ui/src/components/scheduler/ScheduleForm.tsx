@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback, forwardRef, useImperativeHandle, useMemo } from "react"
 import { Button, Input, Badge } from "@/components/ui"
+import { useExtensionState } from "../../context/ExtensionStateContext";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { AutosizeTextarea } from "@/components/ui/autosize-textarea"
@@ -56,8 +57,9 @@ const allDaysSelected: Record<string, boolean> = {
 }
 
 const getDefinedForm = (initialData?: Partial<ScheduleFormData>): RequiredScheduleFormData => ({
-	name: initialData?.name ?? "",
-	mode: initialData?.mode ?? "code",
+  projectId: initialData?.projectId ?? "", // Added projectId
+  name: initialData?.name ?? "",
+  mode: initialData?.mode ?? "code",
 	taskInstructions: initialData?.taskInstructions ?? "",
 	scheduleKind: initialData?.scheduleKind ?? "interval",
 	recurrenceType: initialData?.recurrenceType ?? "daily",
@@ -87,21 +89,33 @@ const getDefinedForm = (initialData?: Partial<ScheduleFormData>): RequiredSchedu
 
 const ScheduleForm = forwardRef<ScheduleFormHandle, ScheduleFormProps>(
 	({ initialData, isEditing, availableModes, onSave, onCancel, onValidityChange }, ref) => {
+		const { projects, activeProjectId } = useExtensionState();
 		const [activeScheduleKindTab, setActiveScheduleKindTab] = useState<"one-time" | "interval" | "cron" | "recurring">(
 			initialData?.scheduleKind || "interval",
 		)
 
 		// For new schedules, we'll use allDaysSelected (all true) as the initial state
 		// For editing, use the provided selectedDays or defaultDays
-		const initialFormData =
-			!isEditing && (!initialData || !initialData.selectedDays)
-				? { ...initialData, selectedDays: { ...allDaysSelected } }
-				: initialData
+		// Also, set projectId from activeProjectId if creating new and not already set in initialData
+		const effectiveInitialData = useMemo(() => {
+			let data = initialData;
+			if (!isEditing) {
+				if (!data || !data.selectedDays) {
+					data = { ...data, selectedDays: { ...allDaysSelected } };
+				}
+				if (!data || !data.projectId) {
+					data = { ...data, projectId: activeProjectId || "" };
+				}
+			}
+			return data;
+		}, [initialData, isEditing, activeProjectId]);
+
+
 		const [form, setForm] = useState<RequiredScheduleFormData>(
-			getDefinedForm(initialData ? { ...initialData, scheduleKind: activeScheduleKindTab } : { scheduleKind: activeScheduleKindTab }),
+			getDefinedForm(effectiveInitialData ? { ...effectiveInitialData, scheduleKind: activeScheduleKindTab } : { scheduleKind: activeScheduleKindTab, projectId: activeProjectId || "" }),
 		)
-		const [hasStartDate, setHasStartDate] = useState<boolean>(!!initialData?.startDate)
-		const [hasExpiration, setHasExpiration] = useState<boolean>(!!initialData?.expirationDate)
+		const [hasStartDate, setHasStartDate] = useState<boolean>(!!effectiveInitialData?.startDate)
+		const [hasExpiration, setHasExpiration] = useState<boolean>(!!effectiveInitialData?.expirationDate)
 
 		// Determine if any days of the week are not selected (for editing mode)
 		const anyDaysNotSelected = useMemo(() => {
@@ -117,6 +131,7 @@ const ScheduleForm = forwardRef<ScheduleFormHandle, ScheduleFormProps>(
 			const baseValid =
 				!!form.name.trim() &&
 				!!form.mode &&
+				!!form.projectId && // Ensure a project is selected
 				!!form.taskInstructions.trim() &&
 				(form.taskInteraction !== "wait" ||
 					(!!form.inactivityDelay && !isNaN(Number(form.inactivityDelay)) && Number(form.inactivityDelay) > 0));
@@ -172,7 +187,12 @@ const ScheduleForm = forwardRef<ScheduleFormHandle, ScheduleFormProps>(
 		}))
 
 		useEffect(() => {
-			if (!isEditing && !initialData?.startDate) {
+			// Initialize form with activeProjectId if creating new and no projectId is in initialData
+			if (!isEditing && (!initialData || !initialData.projectId) && activeProjectId) {
+				setField("projectId", activeProjectId);
+			}
+			
+			if (!isEditing && !effectiveInitialData?.startDate) {
 				const now = new Date()
 				const currentHour = now.getHours()
 
@@ -189,7 +209,7 @@ const ScheduleForm = forwardRef<ScheduleFormHandle, ScheduleFormProps>(
 					startMinute: "00",
 				}))
 			}
-		}, [isEditing, initialData, hasStartDate])
+		}, [isEditing, effectiveInitialData, hasStartDate, activeProjectId, initialData])
 
 		const setField = <K extends keyof RequiredScheduleFormData>(key: K, value: RequiredScheduleFormData[K]) => {
 			return setForm((f) => ({ ...f, [key]: value }))
@@ -397,6 +417,33 @@ const ScheduleForm = forwardRef<ScheduleFormHandle, ScheduleFormProps>(
 						value={form.name}
 						onChange={(e) => setField("name", e.target.value)}
 					/>
+					<div className="flex flex-col gap-2">
+						<label className="text-vscode-descriptionForeground text-sm">
+							Project
+							<span className="text-red-500 ml-0.5">*</span>
+						</label>
+						<Select
+							value={form.projectId}
+							onValueChange={(v) => setField("projectId", v)}
+							disabled={!projects || projects.length === 0 || (isEditing && !!initialData?.projectId) /* Disable if editing and project already set */}
+						>
+							<SelectTrigger className="w-full bg-vscode-dropdown-background !bg-vscode-dropdown-background hover:!bg-vscode-dropdown-background border border-vscode-dropdown-border">
+								<SelectValue placeholder={!projects || projects.length === 0 ? "No projects available" : "Select a project"} />
+							</SelectTrigger>
+							<SelectContent>
+								{projects?.map((project) => (
+									<SelectItem key={project.id} value={project.id}>
+										{project.name}
+									</SelectItem>
+								))}
+							</SelectContent>
+						</Select>
+						{(!projects || projects.length === 0) && (
+							<p className="text-xs text-vscode-errorForeground mt-1">
+								Please create a project first in the Projects tab.
+							</p>
+						)}
+					</div>
 					<div className="flex flex-col gap-3 ">
 						<div className="flex flex-col gap-2">
 							<label className="text-vscode-descriptionForeground text-sm">
