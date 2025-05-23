@@ -15,31 +15,53 @@ export class RooService {
    * Starts a new task in the Roo Cline extension with the specified mode and instructions.
    * @param mode The mode slug to use.
    * @param taskInstructions The instructions for the task.
+   * @param projectInfo Optional project context information.
    * @returns The ID of the new task.
    * @throws Error if the Roo Cline extension or its API is not available.
    */
-  public static async startTaskWithMode(mode: string, taskInstructions: string): Promise<string> {
-    const api = RooService.getRooClineApi();
-    console.log('got api', api);
-    // Get the current configuration
-    const config = api.getConfiguration();
-    console.log('got config', config);
-
-    // Set the mode in the configuration
-    const updatedConfig = {
-      ...config,
-      mode,
-      customModePrompts: config.customModePrompts || {}
-    };
-    console.log(updatedConfig)
-
-    // Start a new task with the specified mode and instructions, and return the task ID
-    const taskId = await api.startNewTask({
-      configuration: updatedConfig,
-      text: taskInstructions
-    });
-    console.log('got taskId', taskId);
-    return taskId;
+  public static async startTaskWithMode(
+  	mode: string,
+  	taskInstructions: string,
+  	projectInfo?: {
+  		directoryPath: string,
+  		watchedDirectories?: { path: string, fileTypes: string[] }[]
+  	}
+  ): Promise<string> {
+  	const api = RooService.getRooClineApi();
+  	console.log('got api', api);
+  	// Get the current configuration
+  	const config = api.getConfiguration();
+  	console.log('got config', config);
+ 
+  	// Set the mode in the configuration
+  	const updatedConfig = {
+  		...config,
+  		mode,
+  		customModePrompts: config.customModePrompts || {}
+  	};
+  	console.log(updatedConfig);
+ 
+  	let finalTaskInstructions = taskInstructions;
+  	if (projectInfo) {
+  		let contextInfo = `Project Directory: ${projectInfo.directoryPath}\n\n`;
+  		if (projectInfo.watchedDirectories && projectInfo.watchedDirectories.length > 0) {
+  			contextInfo += "Watched Directories:\n";
+  			projectInfo.watchedDirectories.forEach((dir, index) => {
+  				contextInfo += `${index + 1}. ${dir.path} (File Types: ${dir.fileTypes.join(', ')})\n`;
+  			});
+  			contextInfo += "\n";
+  		}
+  		contextInfo += "Please use these paths for context when handling file operations.\n\n";
+  		finalTaskInstructions = contextInfo + taskInstructions;
+  	}
+ 
+  	// Start a new task with the specified mode and instructions, and return the task ID
+  	const taskId = await api.startNewTask({
+  		configuration: updatedConfig,
+  		text: finalTaskInstructions
+  	});
+  	console.log('got taskId', taskId);
+  	return taskId;
   }
 
   /**

@@ -85,17 +85,12 @@ const ScheduleListItem: React.FC<ScheduleListItemProps> = ({
       <div className="flex items-start p-4 gap-3"> {/* Increased padding and gap */}
         <div className="flex-1 min-w-0"> {/* Added min-w-0 for better truncation inside flex */}
           <div className="flex justify-between items-center mb-1">
-            <div className="flex items-center min-w-0 flex-grow"> {/* Allow this section to grow and truncate */}
-              {projectColor && <ProjectColorDot color={projectColor} size="sm" />}
-              {projectName && (
-                <span className="text-vscode-descriptionForeground text-sm mr-1 truncate" title={projectName}>
-                  {projectName}:
-                </span>
-              )}
-              <span className={`codicon ${getScheduleIcon(schedule)} mr-1.5 text-vscode-descriptionForeground flex-shrink-0`} title={`Type: ${schedule.scheduleKind}`}></span>
-              <span className="text-vscode-foreground font-medium text-base truncate" title={schedule.name}>{schedule.name}</span>
-            </div>
-            <div className="flex flex-row gap-1 items-center flex-shrink-0">
+          	<div className="flex items-center min-w-0 flex-grow"> {/* Allow this section to grow and truncate */}
+          		{/* ProjectColorDot and projectName removed from here */}
+          		<span className={`codicon ${getScheduleIcon(schedule)} mr-1.5 text-vscode-descriptionForeground flex-shrink-0`} title={`Type: ${schedule.scheduleKind}`}></span>
+          		<span className="text-vscode-foreground font-medium text-base truncate" title={schedule.name}>{schedule.name}</span>
+          	</div>
+          	<div className="flex flex-row gap-1 items-center flex-shrink-0">
               {/* Active/Inactive Status Indicator (Play/Pause Icons) */}
               <Button
                 variant="ghost"
@@ -308,29 +303,40 @@ const ScheduleListItem: React.FC<ScheduleListItemProps> = ({
               })()}
             </div>
           )}
-
-          {/* "Run Now" Button - Moved to bottom right */}
-          <div className="flex justify-end mt-3">
-            <Button
-              variant="outline" // Changed variant for better visibility at bottom
-              size="sm" // Slightly larger for a standalone action
-              className="h-8 px-3 py-1" // Adjusted padding
-              title="Run now"
-              data-testid="run-now-schedule-button-bottom"
-              onClick={e => {
-                e.stopPropagation(); // Prevent card click
-                onRunNow(schedule.id);
-              }}
-              aria-label="Run schedule now"
-            >
-              <span className="codicon codicon-play mr-1"></span> {/* Added margin to icon */}
-              Run Now
-            </Button>
+     
+          {/* Footer section for Project Info and Run Now button */}
+          <div className="flex justify-between items-center mt-3 pt-3 border-t border-vscode-panel-border"> {/* Added top border */}
+          	{/* Project Info - Bottom Left */}
+          	<div className="flex items-center min-w-0"> {/* min-w-0 for truncation if needed */}
+          		{projectColor && <ProjectColorDot color={projectColor} size="sm" />}
+          		{projectName && (
+          			<span className="text-vscode-descriptionForeground text-xs ml-1 truncate" title={projectName}> {/* Smaller text, added margin */}
+          				{projectName}
+          			</span>
+          		)}
+          	</div>
+     
+          	{/* "Run Now" Button - Bottom Right */}
+          	<Button
+          		variant="outline"
+          		size="sm"
+          		className="h-8 px-3 py-1"
+          		title="Run now"
+          		data-testid="run-now-schedule-button-bottom"
+          		onClick={e => {
+          			e.stopPropagation(); // Prevent card click
+          			onRunNow(schedule.id);
+          		}}
+          		aria-label="Run schedule now"
+          	>
+          		<span className="codicon codicon-play mr-1"></span>
+          		Run Now
+          	</Button>
           </div>
+         </div>
         </div>
-      </div>
-    </div>
-  );
+       </div>
+      );
 };
 
 export default ScheduleListItem;

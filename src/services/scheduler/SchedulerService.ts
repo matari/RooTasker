@@ -51,11 +51,13 @@ export class SchedulerService {
   private schedules: Schedule[] = [];
   private schedulesFilePath: string;
   private outputChannel: vscode.OutputChannel;
-
+  private context: vscode.ExtensionContext; // Added context property
+ 
   private constructor(context: vscode.ExtensionContext) {
-    this.schedulesFilePath = path.join(getWorkspacePath(), '.rootasker', 'schedules.json');
-    this.outputChannel = vscode.window.createOutputChannel('RooTasker Scheduler');
-    context.subscriptions.push(this.outputChannel);
+  	this.context = context; // Store the context
+  	this.schedulesFilePath = path.join(getWorkspacePath(), '.rootasker', 'schedules.json');
+  	this.outputChannel = vscode.window.createOutputChannel('RooTasker Scheduler');
+  	this.context.subscriptions.push(this.outputChannel);
   }
 
   public static getInstance(context: vscode.ExtensionContext): SchedulerService {
@@ -711,16 +713,44 @@ export class SchedulerService {
     }
   }
 
-  private async processTask(mode: string, taskInstructions: string): Promise<string> {
-    console.log('in process task', mode, taskInstructions);
-    try {
-      const taskId = await RooService.startTaskWithMode(mode, taskInstructions);
-      console.log(`Successfully started task with mode "${mode}", taskId: ${taskId}`);
-      return taskId;
-    } catch (error) {
-      console.log(`Error processing task: ${error instanceof Error ? error.message : String(error)}`);
-      throw error;
-    }
+  private async processTask(
+  	mode: string,
+  	taskInstructions: string,
+  	projectInfo?: {
+  		directoryPath: string,
+  		watchedDirectories?: { path: string, fileTypes: string[] }[]
+  	}
+  ): Promise<string> {
+  	console.log('in process task', mode, taskInstructions, projectInfo);
+  	try {
+  		let enhancedInstructions = taskInstructions;
+ 
+  		if (projectInfo) {
+  			// Build context information section
+  			let contextInfo = `Project Directory: ${projectInfo.directoryPath}\n\n`;
+ 
+  			// Add watched directories if available
+  			if (projectInfo.watchedDirectories && projectInfo.watchedDirectories.length > 0) {
+  				contextInfo += "Watched Directories:\n";
+  				projectInfo.watchedDirectories.forEach((dir, index) => {
+  					contextInfo += `${index + 1}. ${dir.path} (File Types: ${dir.fileTypes.join(', ')})\n`;
+  				});
+  				contextInfo += "\n";
+  			}
+ 
+  			contextInfo += "Please use these paths for context when handling file operations.\n\n";
+ 
+  			// Add to task instructions
+  			enhancedInstructions = contextInfo + taskInstructions;
+  		}
+ 
+  		const taskId = await RooService.startTaskWithMode(mode, enhancedInstructions);
+  		console.log(`Successfully started task with mode "${mode}", taskId: ${taskId}`);
+  		return taskId;
+  	} catch (error) {
+  		console.log(`Error processing task: ${error instanceof Error ? error.message : String(error)}`);
+  		throw error;
+  	}
   }
 
   private log(message: string): void {
@@ -846,18 +876,45 @@ export class SchedulerService {
    }
   
    public async runProjectSchedule(schedule: BaseSchedule): Promise<void> {
-    this.log(`Running project schedule: "${schedule.name}" (ID: ${schedule.id}) from project ID ${schedule.projectId}`);
-    try {
-    	// We call processTask directly to execute the schedule's defined task
-    	const taskId = await this.processTask(schedule.mode, schedule.taskInstructions);
-    	this.log(`"Run Now" for project schedule "${schedule.name}" (Project: ${schedule.projectId}) started task ${taskId}.`);
-    	vscode.window.showInformationMessage(`Task "${schedule.name}" (from project) started manually.`);
-    	// Note: This ad-hoc execution does not update lastExecutionTime or other schedule properties
-    	// as it's an out-of-band execution. Regular scheduling remains unaffected.
-    } catch (error) {
-    	this.log(`Error during "Run Now" for project schedule "${schedule.name}" (Project: ${schedule.projectId}): ${error instanceof Error ? error.message : String(error)}`);
-    	vscode.window.showErrorMessage(`Failed to run task "${schedule.name}" (from project) manually: ${error instanceof Error ? error.message : String(error)}`);
-    }
+   	this.log(`Running project schedule: "${schedule.name}" (ID: ${schedule.id}) from project ID ${schedule.projectId}`);
+   	try {
+   		// Get project and watcher information
+   		// Assuming ProjectStorageService is available or can be instantiated
+   		// For now, let's assume it's accessible via this.context if it's a singleton or passed in.
+   		// If not, we might need to adjust how ProjectStorageService is accessed here.
+   		// Based on previous context, ProjectStorageService is usually instantiated where needed.
+   		const { ProjectStorageService } = await import('../../core/storage/ProjectStorageService');
+   		const projectStorageService = new ProjectStorageService(this.context); // Use stored context
+  
+   		const project = await projectStorageService.getProject(schedule.projectId);
+  
+   		if (!project || !project.directoryPath) {
+   			throw new Error(`Could not find project or project path for ID: ${schedule.projectId}`);
+   		}
+  
+   		// Get watchers for this project
+   		const projectWatchers = await projectStorageService.getWatchersForProject(schedule.projectId);
+  
+   		// Prepare project info object with directory and watchers
+   		const projectInfo = {
+   			directoryPath: project.directoryPath,
+   			watchedDirectories: projectWatchers.map(watcher => ({
+   				path: watcher.directoryPath,
+   				fileTypes: watcher.fileTypes
+   			}))
+   		};
+   		
+   		// Call processTask with the project info
+   		const taskId = await this.processTask(schedule.mode, schedule.taskInstructions, projectInfo);
+  
+   		this.log(`"Run Now" for project schedule "${schedule.name}" (Project: ${schedule.projectId}) started task ${taskId}.`);
+   		vscode.window.showInformationMessage(`Task "${schedule.name}" (from project) started manually.`);
+   		// Note: This ad-hoc execution does not update lastExecutionTime or other schedule properties
+   		// as it's an out-of-band execution. Regular scheduling remains unaffected.
+   	} catch (error) {
+   		this.log(`Error during "Run Now" for project schedule "${schedule.name}" (Project: ${schedule.projectId}): ${error instanceof Error ? error.message : String(error)}`);
+   		vscode.window.showErrorMessage(`Failed to run task "${schedule.name}" (from project) manually: ${error instanceof Error ? error.message : String(error)}`);
+   	}
    }
   
    public async reloadSchedulesAndReschedule(): Promise<void> {

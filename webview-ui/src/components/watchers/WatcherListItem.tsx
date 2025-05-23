@@ -36,19 +36,14 @@ const WatcherListItem: React.FC<WatcherListItemProps> = ({
       onClick={() => onEdit(watcher.id)}
     >
       <div className="flex items-start p-4 gap-3"> {/* Increased padding and gap */}
-        <div className="flex-1 min-w-0"> 
-          <div className="flex justify-between items-center mb-1">
-            <div className="flex items-center min-w-0 flex-grow"> {/* Allow this section to grow and truncate */}
-              {projectColor && <ProjectColorDot color={projectColor} size="sm" />}
-              {projectName && (
-                <span className="text-vscode-descriptionForeground text-sm mr-1 truncate" title={projectName}>
-                  {projectName}:
-                </span>
-              )}
-              <span className="codicon codicon-eye mr-1.5 text-vscode-descriptionForeground flex-shrink-0" title="Watcher"></span> {/* Changed icon to eye, reduced margin */}
-              <span className="text-vscode-foreground font-medium text-base truncate" title={watcher.name}>{watcher.name}</span>
-            </div>
-            <div className="flex flex-row gap-1 items-center flex-shrink-0">
+        <div className="flex-1 min-w-0">
+        	<div className="flex justify-between items-center mb-1">
+        		<div className="flex items-center min-w-0 flex-grow"> {/* Allow this section to grow and truncate */}
+        			{/* ProjectColorDot and projectName removed from here */}
+        			<span className="codicon codicon-eye mr-1.5 text-vscode-descriptionForeground flex-shrink-0" title="Watcher"></span> {/* Changed icon to eye, reduced margin */}
+        			<span className="text-vscode-foreground font-medium text-base truncate" title={watcher.name}>{watcher.name}</span>
+        		</div>
+        		<div className="flex flex-row gap-1 items-center flex-shrink-0">
               <Button
                 variant="ghost"
                 size="icon"
@@ -166,13 +161,23 @@ const WatcherListItem: React.FC<WatcherListItemProps> = ({
                 </button>
               ) : (
                 formatDate(watcher.lastTriggeredTime)
+               )}
+              </div>
+             )}
+        
+             {/* Project Info - Bottom Left */}
+             <div className="flex items-center mt-3 pt-3 border-t border-vscode-panel-border"> {/* Added top border and margin */}
+              {projectColor && <ProjectColorDot color={projectColor} size="sm" />}
+              {projectName && (
+               <span className="text-vscode-descriptionForeground text-xs ml-1 truncate" title={projectName}> {/* Smaller text, added margin */}
+                {projectName}
+               </span>
               )}
+             </div>
             </div>
-          )}
-        </div>
-      </div>
-    </div>
-  );
+           </div>
+          </div>
+         );
 };
 
 export default WatcherListItem;

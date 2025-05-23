@@ -5,9 +5,11 @@ import { getWorkspacePath } from '../../utils/path';
 import { fileExistsAtPath } from '../../utils/fs';
 import { RooService } from '../scheduler/RooService'; // Corrected path
 import { Watcher, WatchersFile } from '../../../webview-ui/src/components/watchers/types'; // Corrected path
+import { ProjectStorageService } from '../../core/storage/ProjectStorageService'; // Added import
+import { BaseWatcher } from '../../shared/ProjectTypes'; // Added import for BaseWatcher type if needed for projectWatchers
 
 export class WatcherService {
-  private static instance: WatcherService;
+	private static instance: WatcherService;
   private watchers: Watcher[] = [];
   private watchersFilePath: string;
   private outputChannel: vscode.OutputChannel;
@@ -203,17 +205,40 @@ export class WatcherService {
         this.log(`Setting up watcher for "${watcher.name}" on pattern: ${singleGlob}`);
 
         const handleChange = async (uri: vscode.Uri) => {
-            this.log(`File change detected for watcher "${watcher.name}": ${uri.fsPath}`);
-            try {
-              const taskId = await RooService.startTaskWithMode(watcher.mode, watcher.prompt);
-              this.log(`Triggered task ${taskId} for watcher "${watcher.name}" due to change in ${uri.fsPath}`);
-              // Update watcher's last triggered time and task ID
-              const now = new Date().toISOString();
-              await this.updateWatcher(watcher.id, { lastTriggeredTime: now, lastTaskId: taskId });
-            } catch (error) {
-              this.log(`Error triggering task for watcher "${watcher.name}": ${error instanceof Error ? error.message : String(error)}`);
-            }
-          };
+        	this.log(`File change detected for watcher "${watcher.name}" (Project ID: ${watcher.projectId}): ${uri.fsPath}`);
+        	try {
+        		const projectStorageService = new ProjectStorageService(this.context);
+        		const project = await projectStorageService.getProject(watcher.projectId);
+      
+        		if (!project || !project.directoryPath) {
+        			this.log(`Project or project directory not found for watcher "${watcher.name}". Cannot provide full context.`);
+        			// Proceed without full project context, or handle error differently
+        			const taskId = await RooService.startTaskWithMode(watcher.mode, watcher.prompt);
+        			this.log(`Triggered task ${taskId} for watcher "${watcher.name}" (no full project context) due to change in ${uri.fsPath}`);
+        			const now = new Date().toISOString();
+        			await this.updateWatcher(watcher.id, { lastTriggeredTime: now, lastTaskId: taskId });
+        			return;
+        		}
+      
+        		const projectWatchers: BaseWatcher[] = await projectStorageService.getWatchersForProject(watcher.projectId);
+        		
+        		const projectInfo = {
+        			directoryPath: project.directoryPath,
+        			watchedDirectories: projectWatchers.map(pw => ({
+        				path: pw.directoryPath,
+        				fileTypes: pw.fileTypes
+        			}))
+        		};
+      
+        		const taskId = await RooService.startTaskWithMode(watcher.mode, watcher.prompt, projectInfo);
+        		this.log(`Triggered task ${taskId} for watcher "${watcher.name}" (Project: ${project.name}) with full context, due to change in ${uri.fsPath}`);
+        		const now = new Date().toISOString();
+        		await this.updateWatcher(watcher.id, { lastTriggeredTime: now, lastTaskId: taskId });
+      
+        	} catch (error) {
+        		this.log(`Error triggering task for watcher "${watcher.name}": ${error instanceof Error ? error.message : String(error)}`);
+        	}
+        };
 
         fsWatcher.onDidChange(handleChange);
         fsWatcher.onDidCreate(handleChange);
