@@ -559,10 +559,7 @@ export const webviewMessageHandler = async (provider: any, message: WebviewMessa
 			await updateGlobalState("mcpEnabled", mcpEnabled)
 			await provider.postStateToWebview()
 			break
-		case "enableMcpServerCreation":
-			await updateGlobalState("enableMcpServerCreation", message.bool ?? true)
-			await provider.postStateToWebview()
-			break
+		// REMOVED enableMcpServerCreation case
 		case "ttsEnabled":
 			const ttsEnabled = message.bool ?? true
 			await updateGlobalState("ttsEnabled", ttsEnabled)
@@ -1190,6 +1187,189 @@ case "humanRelayCancel":
 				// Optionally notify webview of error
 			}
 			break;
+		case "getProjects": // Handler for the new message type
+			try {
+				const projects = await provider.projectStorageService.getProjects();
+				provider.postMessageToWebview({ type: "setProjects", payload: projects });
+			} catch (error) {
+				provider.log(`Error fetching projects for webview: ${error instanceof Error ? error.message : String(error)}`);
+				provider.postMessageToWebview({ type: "setProjects", payload: [], error: "Failed to load projects" });
+			}
+			break;
+		case "openExternalUrl":
+			if (message.url) {
+				vscode.env.openExternal(vscode.Uri.parse(message.url));
+			}
+			break;
+		case "getPrompts": {
+			try {
+				if (!provider.promptStorageService) {
+					const { PromptStorageService } = await import('../storage/PromptStorageService');
+					provider.promptStorageService = new PromptStorageService(provider.context);
+				}
+				const prompts = await provider.promptStorageService.getPrompts();
+				await provider.postMessageToWebview({ type: 'setPrompts', payload: prompts });
+			} catch (error) {
+				console.error('Error fetching prompts for webview:', error);
+				await provider.postMessageToWebview({ type: 'setPrompts', payload: [], error: 'Failed to load prompts' });
+			}
+			break;
+		}
+		case "promptsUpdated": { // Added to handle prompt list refresh
+			try {
+				if (!provider.promptStorageService) {
+					const { PromptStorageService } = await import('../storage/PromptStorageService');
+					provider.promptStorageService = new PromptStorageService(provider.context);
+				}
+				const prompts = await provider.promptStorageService.getPrompts();
+				await provider.postMessageToWebview({ type: 'setPrompts', payload: prompts });
+			} catch (error) {
+				console.error('Error refreshing prompts for webview:', error);
+				// Optionally send an error back to webview or just log
+			}
+			break;
+		}
+		case "savePromptAndOpenFile": {
+			const payload = message.payload as any; // Cast to any for now, should be SavePromptPayload
+			if (payload && payload.title) { // This is for savePromptAndOpenFile
+				try {
+					// 1. Initialize prompt storage service if needed
+					if (!provider.promptStorageService) {
+						const { PromptStorageService } = await import('../storage/PromptStorageService');
+						provider.promptStorageService = new PromptStorageService(provider.context);
+					}
+					
+					let promptResult;
+					
+					// Check if we're updating an existing prompt or creating a new one
+					if (payload.promptId) {
+						// Update existing prompt
+						const updates = {
+							title: payload.title,
+							content: payload.content || '',
+							tags: payload.tags || []
+						};
+						promptResult = await provider.promptStorageService.updatePrompt(payload.promptId, updates);
+						if (!promptResult) {
+							throw new Error(`Prompt with ID ${payload.promptId} not found`);
+						}
+						provider.log(`Updated prompt ID: ${payload.promptId}`);
+					} else {
+						// Create new prompt
+						const promptMetaData = {
+							title: payload.title,
+							content: payload.content || '',
+							tags: payload.tags || []
+						};
+						promptResult = await provider.promptStorageService.addPrompt(promptMetaData);
+						provider.log(`Created new prompt ID: ${promptResult.id}`);
+					}
+
+					// 2. Construct content with frontmatter
+					let fileContent = '---\n';
+					fileContent += `title: ${promptResult.title}\n`;
+					if (payload.description) {
+						fileContent += `description: ${payload.description}\n`;
+					}
+					if (promptResult.tags && promptResult.tags.length > 0) {
+						fileContent += `tags: [${promptResult.tags.join(', ')}]\n`;
+					}
+					fileContent += `promptId: ${promptResult.id}\n`;
+					fileContent += `---\n\n`;
+					fileContent += promptResult.content || `<!-- Enter your prompt content below this line -->\n`;
+					
+					// 3. Create and open a named temporary file
+					const sanitizedTitle = payload.title.replace(/[<>:"/\\|?*]+/g, '_').replace(/\s+/g, '_').slice(0, 50);
+					const tempDir = vscode.Uri.joinPath(provider.context.globalStorageUri, 'temp_prompts');
+					await vscode.workspace.fs.createDirectory(tempDir); // Ensure directory exists
+					const tempFilePath = vscode.Uri.joinPath(tempDir, `${sanitizedTitle || 'Untitled_Prompt'}_${promptResult.id.slice(0,8)}.md`);
+					
+					await vscode.workspace.fs.writeFile(tempFilePath, Buffer.from(fileContent, 'utf8'));
+					
+					const doc = await vscode.workspace.openTextDocument(tempFilePath);
+					await vscode.window.showTextDocument(doc);
+					
+					provider.log(`Opened temporary prompt file: ${tempFilePath.fsPath} for prompt ID: ${promptResult.id}`);
+
+					// 4. TODO: Store mapping of tempFilePath.toString() to promptResult.id
+					//    And listen for save/close events on this document.
+					//    This part is more complex and involves workspace event listeners.
+
+					// Notify webview that prompts might have been updated (e.g., to refresh list)
+					await provider.postMessageToWebview({ type: 'promptsUpdated' });
+
+				} catch (error) {
+					console.error('Error in savePromptAndOpenFile:', error);
+					vscode.window.showErrorMessage(`Failed to save and open prompt: ${error instanceof Error ? error.message : String(error)}`);
+				}
+			}
+			break;
+		}
+		case "runPromptNow": {
+			const payload = message.payload as any; // Should be RunPromptNowPayload
+			if (payload && payload.promptId) {
+				try {
+					if (!provider.promptStorageService) {
+						const { PromptStorageService } = await import('../storage/PromptStorageService');
+						provider.promptStorageService = new PromptStorageService(provider.context);
+					}
+					const promptToRun = await provider.promptStorageService.getPrompt(payload.promptId);
+					if (promptToRun && promptToRun.content) {
+						const taskString = `Run prompt: ${promptToRun.title}\n\n${promptToRun.content}`;
+						
+						// Determine the mode to use.
+						// For now, let's use the currently active mode in RooTasker's webview, or default.
+						// This could be enhanced later to allow prompts to specify a mode or for user to select.
+						const { mode: currentRooTaskerMode } = await provider.getState();
+						const modeToUse = payload.mode || currentRooTaskerMode || defaultModeSlug;
+						
+						provider.log(`Attempting to run prompt ID: ${payload.promptId} with mode: ${modeToUse}`);
+
+						// Use RooService to start the task, which handles mode setting in Roo Code
+						const { RooService } = await import("../../services/scheduler/RooService");
+						const taskId = await RooService.startTaskWithMode(modeToUse, taskString);
+						
+						provider.log(`Initiated "Run Now" for prompt ID: ${payload.promptId} with mode ${modeToUse}. Task ID: ${taskId}`);
+						vscode.window.showInformationMessage(`Prompt "${promptToRun.title}" started in Roo Code.`);
+						
+						// Optionally, switch Roo Code view to the chat.
+						// This might require getting the Roo Code API and calling a method to focus its panel.
+						// For now, a notification is sufficient.
+
+					} else {
+						vscode.window.showErrorMessage(`Prompt not found or has no content: ${payload.promptId}`);
+					}
+				} catch (error) {
+					console.error('Error in runPromptNow:', error);
+					vscode.window.showErrorMessage(`Failed to run prompt: ${error instanceof Error ? error.message : String(error)}`);
+				}
+			}
+			break;
+		}
+		case "deletePrompt": {
+			const payload = message.payload as any; // Should be { promptId: string }
+			if (payload && payload.promptId) {
+				try {
+					if (!provider.promptStorageService) {
+						const { PromptStorageService } = await import('../storage/PromptStorageService');
+						provider.promptStorageService = new PromptStorageService(provider.context);
+					}
+					const success = await provider.promptStorageService.deletePrompt(payload.promptId);
+					if (success) {
+						provider.log(`Deleted prompt ID: ${payload.promptId}`);
+						// Notify webview to refresh the prompt list
+						await provider.postMessageToWebview({ type: 'promptsUpdated' });
+					} else {
+						vscode.window.showErrorMessage(`Failed to delete prompt: Prompt not found.`);
+					}
+				} catch (error) {
+					console.error('Error in deletePrompt:', error);
+					vscode.window.showErrorMessage(`Failed to delete prompt: ${error instanceof Error ? error.message : String(error)}`);
+				}
+			}
+			break;
+		}
+		// REMOVED Recorder cases: getNgrokUrl, getRecordingsForProject, playRecording, renameRecording, deleteRecording
 	}
 }
 

@@ -31,6 +31,8 @@ import { ContextProxy } from "../config/ContextProxy"
 import { ProviderSettingsManager } from "../config/ProviderSettingsManager"
 import { CustomModesManager } from "../config/CustomModesManager"
 import { ProjectStorageService } from "../storage/ProjectStorageService";
+import { PromptStorageService } from "../storage/PromptStorageService"; // Added for Prompts
+// import { VoiceRecorderServer } from "../../recorder_server/main"; // REMOVED Recorder
 import { ACTION_NAMES } from "../CodeActionProvider"
 import { Cline, ClineOptions } from "../Cline"
 import { getNonce } from "./getNonce"
@@ -64,12 +66,15 @@ export class ClineProvider extends EventEmitter<ClineProviderEvents> implements 
 	public readonly contextProxy: ContextProxy
 	public readonly providerSettingsManager: ProviderSettingsManager
 	public readonly customModesManager: CustomModesManager
-	public readonly projectStorageService: ProjectStorageService; 
+	public readonly projectStorageService: ProjectStorageService;
+	public readonly promptStorageService: PromptStorageService; // Added for Prompts
+	// public readonly voiceRecorderServer?: VoiceRecorderServer; // REMOVED Recorder
 
 	constructor(
 		readonly context: vscode.ExtensionContext,
 		private readonly outputChannel: vscode.OutputChannel,
-		private readonly renderContext: "sidebar" | "editor" = "sidebar",
+		private readonly renderContext: "sidebar" | "editor" = "sidebar"
+		// voiceRecorderServerInstance?: VoiceRecorderServer // REMOVED Recorder
 	) {
 		super()
 
@@ -77,12 +82,14 @@ export class ClineProvider extends EventEmitter<ClineProviderEvents> implements 
 		this.contextProxy = new ContextProxy(context)
 		ClineProvider.activeInstances.add(this)
 		this.providerSettingsManager = new ProviderSettingsManager(this.context)
+		// this.voiceRecorderServer = voiceRecorderServerInstance; // REMOVED Recorder
 
 		this.customModesManager = new CustomModesManager(this.context, async () => {
 			await this.postStateToWebview()
 		})
 
 		this.projectStorageService = new ProjectStorageService(this.context); 
+		this.promptStorageService = new PromptStorageService(this.context); // Added for Prompts
 	}
 
 	async addClineToStack(cline: Cline) {
@@ -247,6 +254,9 @@ export class ClineProvider extends EventEmitter<ClineProviderEvents> implements 
 		if (!this.contextProxy.isInitialized) {
 			await this.contextProxy.initialize()
 		}
+		
+		// Initialize MCP Hub from Roo Cline extension
+		await this.initializeMcpHub()
 		this.view = webviewView
 		webviewView.webview.options = {
 			enableScripts: true,
@@ -443,7 +453,9 @@ export class ClineProvider extends EventEmitter<ClineProviderEvents> implements 
 			`style-src ${webview.cspSource} 'unsafe-inline' https://* http://${localServerUrl} http://0.0.0.0:${localPort}`,
 			`img-src ${webview.cspSource} data:`,
 			`script-src 'unsafe-eval' ${webview.cspSource} https://* https://*.posthog.com http://${localServerUrl} http://0.0.0.0:${localPort} 'nonce-${nonce}'`,
-			`connect-src https://* https://*.posthog.com ws://${localServerUrl} ws://0.0.0.0:${localPort} http://${localServerUrl} http://0.0.0.0:${localPort}`,
+			`connect-src https://* https://*.posthog.com ws://${localServerUrl} ws://0.0.0.0:${localPort} http://${localServerUrl} http://0.0.0.0:${localPort} ws://localhost:8090`,
+			`media-src ${webview.cspSource} data: blob:`, // Allow media from webview source, data, and blob
+			"microphone *", // Allow microphone access from any source (consider making more specific if possible)
 		]
 		return /*html*/ `
 			<!DOCTYPE html>
@@ -481,7 +493,7 @@ export class ClineProvider extends EventEmitter<ClineProviderEvents> implements 
             <meta charset="utf-8">
             <meta name="viewport" content="width=device-width,initial-scale=1,shrink-to-fit=no">
             <meta name="theme-color" content="#000000">
-            <meta http-equiv="Content-Security-Policy" content="default-src 'none'; font-src ${webview.cspSource}; style-src ${webview.cspSource} 'unsafe-inline'; img-src ${webview.cspSource} data:; script-src 'nonce-${nonce}' https://us-assets.i.posthog.com; connect-src https://openrouter.ai https://api.requesty.ai https://us.i.posthog.com https://us-assets.i.posthog.com;">
+            <meta http-equiv="Content-Security-Policy" content="default-src 'none'; font-src ${webview.cspSource}; style-src ${webview.cspSource} 'unsafe-inline'; img-src ${webview.cspSource} data:; script-src 'nonce-${nonce}' https://us-assets.i.posthog.com; connect-src https://openrouter.ai https://api.requesty.ai https://us.i.posthog.com https://us-assets.i.posthog.com ws://localhost:8090; media-src ${webview.cspSource} data: blob:; microphone *;">
             <link rel="stylesheet" type="text/css" href="${stylesUri}">
 			<link href="${codiconsUri}" rel="stylesheet" />
 			<script nonce="${nonce}">
@@ -822,7 +834,7 @@ export class ClineProvider extends EventEmitter<ClineProviderEvents> implements 
 			terminalShellIntegrationTimeout,
 			fuzzyMatchThreshold,
 			mcpEnabled,
-			enableMcpServerCreation,
+			// enableMcpServerCreation, // Already removed in previous step, but checking destructuring
 			alwaysApproveResubmit,
 			requestDelaySeconds,
 			rateLimitSeconds,
@@ -910,7 +922,7 @@ export class ClineProvider extends EventEmitter<ClineProviderEvents> implements 
 			terminalShellIntegrationTimeout: terminalShellIntegrationTimeout ?? TERMINAL_SHELL_INTEGRATION_TIMEOUT,
 			fuzzyMatchThreshold: fuzzyMatchThreshold ?? 1.0,
 			mcpEnabled: mcpEnabled ?? true,
-			enableMcpServerCreation: enableMcpServerCreation ?? true,
+			// enableMcpServerCreation: enableMcpServerCreation ?? true, // REMOVED from returned state
 			alwaysApproveResubmit: alwaysApproveResubmit ?? false,
 			requestDelaySeconds: requestDelaySeconds ?? 10,
 			// rateLimitSeconds: rateLimitSeconds ?? 0, // Removed as it's not in ExtensionState
@@ -990,7 +1002,7 @@ export class ClineProvider extends EventEmitter<ClineProviderEvents> implements 
 			mode: stateValues.mode ?? defaultModeSlug,
 			language: stateValues.language ?? formatLanguage(vscode.env.language),
 			mcpEnabled: stateValues.mcpEnabled ?? true,
-			enableMcpServerCreation: stateValues.enableMcpServerCreation ?? true,
+			// enableMcpServerCreation: stateValues.enableMcpServerCreation ?? true, // REMOVED
 			alwaysApproveResubmit: stateValues.alwaysApproveResubmit ?? false,
 			requestDelaySeconds: Math.max(5, stateValues.requestDelaySeconds ?? 10),
 			rateLimitSeconds: stateValues.rateLimitSeconds ?? 0,
@@ -1076,6 +1088,8 @@ export class ClineProvider extends EventEmitter<ClineProviderEvents> implements 
 		console.log(message)
 	}
 
+	// REMOVED ensureMcpServersDirectoryExists as it's no longer used
+
 	get viewLaunched() {
 		return this.isViewLaunched
 	}
@@ -1086,6 +1100,32 @@ export class ClineProvider extends EventEmitter<ClineProviderEvents> implements 
 
 	public getMcpHub(): any | undefined {
 		return this.mcpHub
+	}
+
+	private async initializeMcpHub() {
+		try {
+			const rooCodeExtensionId = 'rooveterinaryinc.roo-cline'
+			const mcpHubExtension = vscode.extensions.getExtension(rooCodeExtensionId)
+			
+			if (mcpHubExtension) {
+				if (!mcpHubExtension.isActive) {
+					this.log(`Activating Roo Code extension (${rooCodeExtensionId}) for MCP Hub...`)
+					await mcpHubExtension.activate()
+				}
+				
+				const mcpHub = mcpHubExtension.exports?.getMcpHub?.()
+				if (mcpHub) {
+					this.mcpHub = mcpHub
+					this.log("MCP Hub initialized successfully")
+				} else {
+					this.log(`MCP Hub from ${rooCodeExtensionId} found, but 'getMcpHub' is not available. Exports: ${mcpHubExtension.exports ? Object.keys(mcpHubExtension.exports).join(', ') : 'none'}`)
+				}
+			} else {
+				this.log(`Roo Code extension (${rooCodeExtensionId}) not found. MCP Hub will not be available.`)
+			}
+		} catch (error) {
+			this.log(`Failed to initialize MCP Hub: ${error instanceof Error ? error.message : String(error)}`)
+		}
 	}
 
 	public async getTelemetryProperties(): Promise<Record<string, any>> {

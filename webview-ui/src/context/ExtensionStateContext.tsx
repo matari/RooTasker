@@ -1,7 +1,7 @@
 import React, { createContext, useCallback, useContext, useEffect, useState } from "react"
 import { useEvent } from "react-use"
 import { ApiConfigMeta, ExtensionMessage, ExtensionState } from "../../../src/shared/ExtensionMessage"
-import { Project, BaseSchedule, BaseWatcher } from "../../../src/shared/ProjectTypes"; // Added import
+import { Project, BaseSchedule, BaseWatcher, Prompt } from "../../../src/shared/ProjectTypes"; // Added Prompt
 
 import { vscode } from "../utils/vscode"
 import { convertTextMateToHljs } from "../utils/textMateToHljs"
@@ -48,8 +48,8 @@ export interface ExtensionStateContextType extends ExtensionState {
 	setTerminalOutputLineLimit: (value: number) => void
 	mcpEnabled: boolean
 	setMcpEnabled: (value: boolean) => void
-	enableMcpServerCreation: boolean
-	setEnableMcpServerCreation: (value: boolean) => void
+	// enableMcpServerCreation: boolean, // REMOVED
+	// setEnableMcpServerCreation: (value: boolean) => void, // REMOVED
 	alwaysApproveResubmit?: boolean
 	setAlwaysApproveResubmit: (value: boolean) => void
 	requestDelaySeconds: number
@@ -83,7 +83,11 @@ export interface ExtensionStateContextType extends ExtensionState {
 	projectSchedules?: Record<string, BaseSchedule[]>;
 	projectWatchers?: Record<string, BaseWatcher[]>;
 	activeProjectId?: string | null;
-	setActiveProjectId?: (projectId: string | null) => void; // Optional: Add setter if needed directly in UI
+	setActiveProjectId?: (projectId: string | null) => void; 
+
+	// Prompt related state
+	prompts?: Prompt[];
+	setPrompts?: (prompts: Prompt[]) => void;
 }
 
 export const ExtensionStateContext = createContext<ExtensionStateContextType | undefined>(undefined)
@@ -139,7 +143,7 @@ export const ExtensionStateContextProvider: React.FC<{ children: React.ReactNode
 		terminalOutputLineLimit: 500,
 		terminalShellIntegrationTimeout: 4000,
 		mcpEnabled: true,
-		enableMcpServerCreation: true,
+		// enableMcpServerCreation: true, // REMOVED
 		alwaysApproveResubmit: false,
 		requestDelaySeconds: 5,
 		currentApiConfigName: "default",
@@ -165,6 +169,8 @@ export const ExtensionStateContextProvider: React.FC<{ children: React.ReactNode
 		projectSchedules: {},
 		projectWatchers: {},
 		activeProjectId: null,
+		// Initialize prompt state
+		prompts: [],
 	})
 
 	const [didHydrateState, setDidHydrateState] = useState(false)
@@ -220,10 +226,26 @@ export const ExtensionStateContextProvider: React.FC<{ children: React.ReactNode
 					setListApiConfigMeta(message.listApiConfig ?? [])
 					break
 				}
+				case "promptsUpdated": // Listen for updates from backend
+					// Potentially trigger a fetch or directly update if payload contains prompts
+					vscode.postMessage({ type: "getPrompts" }); // Request updated prompts
+					break;
+				case "setPrompts": // New message type from backend to set prompts
+					if (message.payload && Array.isArray(message.payload)) {
+						setState(prevState => ({ ...prevState, prompts: message.payload as Prompt[] }));
+					}
+					break;
 			}
 		},
 		[setListApiConfigMeta],
 	)
+
+	// Fetch initial prompts when component mounts after hydration
+	useEffect(() => {
+		if (didHydrateState) {
+			vscode.postMessage({ type: "getPrompts" });
+		}
+	}, [didHydrateState]);
 
 	useEvent("message", handleMessage)
 
@@ -274,8 +296,8 @@ export const ExtensionStateContextProvider: React.FC<{ children: React.ReactNode
 		setTerminalShellIntegrationTimeout: (value) =>
 			setState((prevState) => ({ ...prevState, terminalShellIntegrationTimeout: value })),
 		setMcpEnabled: (value) => setState((prevState) => ({ ...prevState, mcpEnabled: value })),
-		setEnableMcpServerCreation: (value) =>
-			setState((prevState) => ({ ...prevState, enableMcpServerCreation: value })),
+		// setEnableMcpServerCreation: (value) => // REMOVED
+		// 	setState((prevState) => ({ ...prevState, enableMcpServerCreation: value })), // REMOVED
 		setAlwaysApproveResubmit: (value) => setState((prevState) => ({ ...prevState, alwaysApproveResubmit: value })),
 		setRequestDelaySeconds: (value) => setState((prevState) => ({ ...prevState, requestDelaySeconds: value })),
 		setCurrentApiConfigName: (value) => setState((prevState) => ({ ...prevState, currentApiConfigName: value })),
@@ -311,6 +333,7 @@ export const ExtensionStateContextProvider: React.FC<{ children: React.ReactNode
 			}),
 		// Placeholder for setActiveProjectId, actual implementation might involve posting messages
 		setActiveProjectId: (projectId) => setState((prevState) => ({ ...prevState, activeProjectId: projectId })),
+		setPrompts: (newPrompts) => setState((prevState) => ({ ...prevState, prompts: newPrompts})),
 	}
 
 	return <ExtensionStateContext.Provider value={contextValue}>{children}</ExtensionStateContext.Provider>

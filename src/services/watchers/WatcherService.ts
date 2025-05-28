@@ -3,10 +3,11 @@ import * as path from 'path';
 import * as vscode from 'vscode';
 import { getWorkspacePath } from '../../utils/path';
 import { fileExistsAtPath } from '../../utils/fs';
-import { RooService } from '../scheduler/RooService'; // Corrected path
-import { Watcher, WatchersFile } from '../../../webview-ui/src/components/watchers/types'; // Corrected path
-import { ProjectStorageService } from '../../core/storage/ProjectStorageService'; // Added import
-import { BaseWatcher } from '../../shared/ProjectTypes'; // Added import for BaseWatcher type if needed for projectWatchers
+import { RooService } from '../scheduler/RooService'; 
+import { Watcher, WatchersFile } from '../../../webview-ui/src/components/watchers/types'; 
+import { ProjectStorageService } from '../../core/storage/ProjectStorageService'; 
+import { BaseWatcher } from '../../shared/ProjectTypes'; 
+import { PromptStorageService } from '../../core/storage/PromptStorageService'; // Added for prompt fetching
 
 export class WatcherService {
 	private static instance: WatcherService;
@@ -14,10 +15,12 @@ export class WatcherService {
   private watchersFilePath: string;
   private outputChannel: vscode.OutputChannel;
   private fileWatchers: Map<string, vscode.FileSystemWatcher> = new Map();
+  private promptStorageService: PromptStorageService; // Added
 
   private constructor(private context: vscode.ExtensionContext) {
     this.watchersFilePath = path.join(getWorkspacePath(), '.rootasker', 'watchers.json');
     this.outputChannel = vscode.window.createOutputChannel('RooTasker Watchers');
+    this.promptStorageService = new PromptStorageService(context); // Initialize PromptStorageService
     context.subscriptions.push(this.outputChannel);
   }
 
@@ -212,8 +215,17 @@ export class WatcherService {
       
         		if (!project || !project.directoryPath) {
         			this.log(`Project or project directory not found for watcher "${watcher.name}". Cannot provide full context.`);
-        			// Proceed without full project context, or handle error differently
-        			const taskId = await RooService.startTaskWithMode(watcher.mode, watcher.prompt);
+        			
+              let taskPrompt = watcher.prompt;
+              if (watcher.promptSelectionType === 'saved' && watcher.savedPromptId) {
+                const savedPrompt = await this.promptStorageService.getPrompt(watcher.savedPromptId);
+                if (savedPrompt && savedPrompt.content) {
+                  taskPrompt = savedPrompt.content;
+                } else {
+                  this.log(`Error: Saved prompt ID ${watcher.savedPromptId} not found or no content for watcher "${watcher.name}". Using original prompt.`);
+                }
+              }
+        			const taskId = await RooService.startTaskWithMode(watcher.mode, taskPrompt);
         			this.log(`Triggered task ${taskId} for watcher "${watcher.name}" (no full project context) due to change in ${uri.fsPath}`);
         			const now = new Date().toISOString();
         			await this.updateWatcher(watcher.id, { lastTriggeredTime: now, lastTaskId: taskId });
@@ -229,8 +241,18 @@ export class WatcherService {
         				fileTypes: pw.fileTypes
         			}))
         		};
+            
+            let taskPrompt = watcher.prompt;
+            if (watcher.promptSelectionType === 'saved' && watcher.savedPromptId) {
+              const savedPrompt = await this.promptStorageService.getPrompt(watcher.savedPromptId);
+              if (savedPrompt && savedPrompt.content) {
+                taskPrompt = savedPrompt.content;
+              } else {
+                this.log(`Error: Saved prompt ID ${watcher.savedPromptId} not found or no content for watcher "${watcher.name}". Using original prompt.`);
+              }
+            }
       
-        		const taskId = await RooService.startTaskWithMode(watcher.mode, watcher.prompt, projectInfo);
+        		const taskId = await RooService.startTaskWithMode(watcher.mode, taskPrompt, projectInfo);
         		this.log(`Triggered task ${taskId} for watcher "${watcher.name}" (Project: ${project.name}) with full context, due to change in ${uri.fsPath}`);
         		const now = new Date().toISOString();
         		await this.updateWatcher(watcher.id, { lastTriggeredTime: now, lastTaskId: taskId });

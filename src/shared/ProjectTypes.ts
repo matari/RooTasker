@@ -14,7 +14,9 @@ export interface BaseSchedule {
   name: string;
   mode: string;
   modeDisplayName?: string;
-  taskInstructions: string;
+  taskInstructions: string; // For 'custom' promptSelectionType
+  promptSelectionType?: 'custom' | 'saved';
+  savedPromptId?: string; // ID of the saved prompt if 'saved' is selected
   scheduleKind: "one-time" | "interval" | "cron" | "recurring";
   recurrenceType?: "daily" | "weekly" | "monthly" | "yearly";
   recurrenceDay?: number;
@@ -49,7 +51,9 @@ export interface BaseWatcher {
   name: string;
   directoryPath: string;
   fileTypes: string[];
-  prompt: string;
+  prompt: string; // For 'custom' promptSelectionType
+  promptSelectionType?: 'custom' | 'saved';
+  savedPromptId?: string; // ID of the saved prompt if 'saved' is selected
   mode: string;
   modeDisplayName?: string;
   active?: boolean;
@@ -57,4 +61,16 @@ export interface BaseWatcher {
   updatedAt: string;
   lastTriggeredTime?: string;
   lastTaskId?: string;
+}
+
+export interface Prompt {
+  id: string;
+  title: string;
+  content: string;
+  createdAt: string;
+  updatedAt: string;
+  isArchived: boolean;
+  tags?: string[];
+  // For future use if direct project linking or specific run counts per project are needed:
+  // projectAssociations?: { projectId: string, runCount: number }[]; 
 }

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, forwardRef, useImperativeHandle, useMemo } from "react";
-import { Button } from "@/components/ui/button";
+import { Button, RadioGroup, RadioGroupItem } from "@/components/ui"; // Added RadioGroup
 import { useExtensionState } from "../../context/ExtensionStateContext";
 import { Input } from "@/components/ui/input";
 import { AutosizeTextarea } from "@/components/ui/autosize-textarea";
@@ -8,7 +8,8 @@ import { Badge } from "@/components/ui/badge"; // Added Badge
 import LabeledInput from "../scheduler/LabeledInput"; // Re-use LabeledInput
 import Checkbox from "@/components/ui/checkbox"; 
 import { ModeConfig } from "../../../../src/shared/modes";
-import { Watcher } from "./types";
+import { Prompt } from "../../../../src/shared/ProjectTypes"; // Added Prompt import
+import { Watcher } from "./types"; // This should now include promptSelectionType and savedPromptId from BaseWatcher
 import { vscode } from "../../utils/vscode";
 
 export type WatcherFormData = Omit<Watcher, "id" | "createdAt" | "updatedAt" | "modeDisplayName" | "lastTriggeredTime" | "lastTaskId">;
@@ -34,16 +35,21 @@ const getDefinedForm = (initialData?: Partial<WatcherFormData>): RequiredWatcher
   projectId: initialData?.projectId ?? "", // Added projectId
   name: initialData?.name ?? "",
   directoryPath: initialData?.directoryPath ?? "",
-  fileTypes: initialData?.fileTypes ?? ["*.*"], // Default to all files in directory
+  fileTypes: initialData?.fileTypes ?? ["*.*"], 
   prompt: initialData?.prompt ?? "",
-  mode: initialData?.mode ?? "code", // Default mode
+  promptSelectionType: initialData?.promptSelectionType ?? "custom",
+  savedPromptId: initialData?.savedPromptId ?? "",
+  mode: initialData?.mode ?? "code", 
   active: initialData?.active ?? true,
 });
 
 const WatcherForm = forwardRef<WatcherFormHandle, WatcherFormProps>(
   ({ initialData, isEditing, availableModes, onSave, onCancel, onValidityChange }, ref) => {
-  	const { projects, activeProjectId } = useExtensionState();
+  	const { projects, activeProjectId, prompts } = useExtensionState(); // Added prompts
   	const [currentFileTypeTagInput, setCurrentFileTypeTagInput] = useState<string>("");
+  	const [promptSelectionType, setPromptSelectionType] = useState<'custom' | 'saved'>(
+		initialData?.promptSelectionType || 'custom'
+	);
  
   	const effectiveInitialData = useMemo(() => {
   		let data = initialData;
@@ -68,10 +74,10 @@ const WatcherForm = forwardRef<WatcherFormHandle, WatcherFormProps>(
   	const isValid = useMemo(() => {
   		return (
   			!!form.name.trim() &&
-  			!!form.projectId && // Ensure a project is selected
+  			!!form.projectId && 
   			!!form.directoryPath.trim() &&
   			form.fileTypes.length > 0 &&
-  			!!form.prompt.trim() &&
+  			(form.promptSelectionType === 'custom' ? !!form.prompt.trim() : !!form.savedPromptId) &&
   			!!form.mode
   		);
   	}, [form]);
@@ -126,6 +132,10 @@ const WatcherForm = forwardRef<WatcherFormHandle, WatcherFormProps>(
         return () => window.removeEventListener("message", handleMessage);
     }, []);
 
+    useEffect(() => {
+      // Update main form state when local promptSelectionType changes
+      setField("promptSelectionType", promptSelectionType);
+    }, [promptSelectionType]);
 
     const handleSave = () => {
       if (!isValid) {
@@ -245,19 +255,75 @@ const WatcherForm = forwardRef<WatcherFormHandle, WatcherFormProps>(
             </SelectContent>
           </Select>
         </div>
-        <div className="flex flex-col gap-1">
+
+        <div className="flex flex-col gap-2">
           <label className="text-vscode-descriptionForeground text-sm">
-            Prompt <span className="text-red-500 ml-0.5">*</span>
+            Prompt Source
           </label>
-          <AutosizeTextarea
-            className="w-full p-3 bg-vscode-input-background !bg-vscode-input-background border border-vscode-input-border"
-            minHeight={80}
-            maxHeight={250}
-            placeholder="Enter prompt to run when files change..."
-            value={form.prompt}
-            onChange={(e) => setField("prompt", e.target.value)}
-          />
+          <RadioGroup 
+            value={promptSelectionType} 
+            onValueChange={(value: 'custom' | 'saved') => {
+              setPromptSelectionType(value);
+              if (value === 'custom') setField("savedPromptId", "");
+              else setField("prompt", ""); 
+            }} 
+            className="flex space-x-2"
+          >
+            <div className="flex items-center space-x-1">
+              <RadioGroupItem value="custom" id="watcherPromptCustom" />
+              <label htmlFor="watcherPromptCustom" className="text-sm">Custom</label>
+            </div>
+            <div className="flex items-center space-x-1">
+              <RadioGroupItem value="saved" id="watcherPromptSaved" />
+              <label htmlFor="watcherPromptSaved" className="text-sm">Use Saved Prompt</label>
+            </div>
+          </RadioGroup>
         </div>
+
+        {promptSelectionType === 'custom' && (
+          <div className="flex flex-col gap-1">
+            <label className="text-vscode-descriptionForeground text-sm">
+              Custom Prompt <span className="text-red-500 ml-0.5">*</span>
+            </label>
+            <AutosizeTextarea
+              className="w-full p-3 bg-vscode-input-background !bg-vscode-input-background border border-vscode-input-border"
+              minHeight={80}
+              maxHeight={250}
+              placeholder="Enter prompt to run when files change..."
+              value={form.prompt}
+              onChange={(e) => setField("prompt", e.target.value)}
+            />
+          </div>
+        )}
+
+        {promptSelectionType === 'saved' && (
+          <div className="flex flex-col gap-1">
+            <label className="text-vscode-descriptionForeground text-sm">
+              Select Saved Prompt <span className="text-red-500 ml-0.5">*</span>
+            </label>
+            <Select 
+              value={form.savedPromptId} 
+              onValueChange={(v) => setField("savedPromptId", v)}
+              disabled={!prompts || prompts.length === 0}
+            >
+              <SelectTrigger className="w-full bg-vscode-dropdown-background !bg-vscode-dropdown-background hover:!bg-vscode-dropdown-background border border-vscode-dropdown-border">
+                <SelectValue placeholder={!prompts || prompts.length === 0 ? "No saved prompts" : "Select a prompt"} />
+              </SelectTrigger>
+              <SelectContent>
+                {prompts?.filter(p => !p.isArchived).map((p) => (
+                  <SelectItem key={p.id} value={p.id}>
+                    {p.title}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            {(!prompts || prompts.length === 0) && (
+              <p className="text-xs text-vscode-errorForeground mt-1">
+                No saved prompts available. Create one in the Prompts tab.
+              </p>
+            )}
+          </div>
+        )}
         
         <div className="flex items-center space-x-2 mt-2">
             <Checkbox
@@ -273,14 +339,7 @@ const WatcherForm = forwardRef<WatcherFormHandle, WatcherFormProps>(
             </label>
         </div>
 
-        <div className="flex justify-end mt-4 gap-3">
-          <Button variant="secondary" onClick={onCancel}>
-            Cancel
-          </Button>
-          <Button onClick={handleSave} disabled={!isValid}>
-            {isEditing ? "Update Watcher" : "Save Watcher"}
-          </Button>
-        </div>
+        {/* Buttons removed from here, handled by WatchersView.tsx */}
       </div>
     );
   }

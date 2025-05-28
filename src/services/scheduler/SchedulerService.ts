@@ -6,57 +6,33 @@ import { getWorkspacePath } from '../../utils/path';
 import { fileExistsAtPath } from '../../utils/fs';
 import { RooService } from './RooService';
 import type { BaseSchedule } from '../../shared/ProjectTypes'; // Added import
+import { PromptStorageService } from '../../core/storage/PromptStorageService'; // Added for prompt fetching
 
-export interface Schedule { // Added export
-	id: string;
-  name: string;
-  mode: string;
-  modeDisplayName?: string;
-  taskInstructions: string;
-  scheduleKind: "one-time" | "interval" | "cron" | "recurring";
-  recurrenceType?: "daily" | "weekly" | "monthly" | "yearly";
-  recurrenceDay?: number; // Day of month for monthly and yearly recurrence
-  recurrenceMonth?: number; // Month for yearly recurrence
-  cronExpression?: string;
-  timeInterval?: string;
-  timeUnit?: string;
-  selectedDays?: Record<string, boolean>;
-  startDate?: string;
-  startHour?: string;
-  startMinute?: string;
-  expirationDate?: string;
-  expirationHour?: string;
-  expirationMinute?: string;
-  maxExecutions?: number; // Maximum number of executions
-  executionCount?: number; // Current count of executions
-  requireActivity?: boolean;
-  active?: boolean; // If undefined, treat as true (backward compatibility)
-  taskInteraction?: "wait" | "interrupt" | "skip"; // How to handle when a task is already running
-  inactivityDelay?: string; // Number of minutes of inactivity to wait before executing when taskInteraction is "wait"
-  createdAt: string;
-  updatedAt: string;
-  lastExecutionTime?: string;
-  lastSkippedTime?: string; // Timestamp when execution was last skipped
-  lastTaskId?: string; // Roo Cline task ID of the last execution
-  nextExecutionTime?: string; // ISO string of the next calculated execution time
+// The local Schedule interface should align with BaseSchedule for prompt fields
+export interface Schedule extends BaseSchedule { 
+  // promptSelectionType and savedPromptId are now part of BaseSchedule
+  // taskInstructions is also part of BaseSchedule
+  // Add any fields specific to SchedulerService's internal Schedule that are not in BaseSchedule
 }
 
 interface SchedulesFile {
-  schedules: Schedule[];
+  schedules: Schedule[]; // This should use the updated Schedule interface
 }
 
 export class SchedulerService {
   private static instance: SchedulerService;
   private timers: Map<string, NodeJS.Timeout> = new Map();
-  private schedules: Schedule[] = [];
+  private schedules: Schedule[] = []; // This should use the updated Schedule interface
   private schedulesFilePath: string;
   private outputChannel: vscode.OutputChannel;
-  private context: vscode.ExtensionContext; // Added context property
- 
+  private context: vscode.ExtensionContext; 
+  private promptStorageService: PromptStorageService; // Added
+
   private constructor(context: vscode.ExtensionContext) {
-  	this.context = context; // Store the context
+  	this.context = context; 
   	this.schedulesFilePath = path.join(getWorkspacePath(), '.rootasker', 'schedules.json');
   	this.outputChannel = vscode.window.createOutputChannel('RooTasker Scheduler');
+    this.promptStorageService = new PromptStorageService(context); // Initialize PromptStorageService
   	this.context.subscriptions.push(this.outputChannel);
   }
 
@@ -687,7 +663,17 @@ export class SchedulerService {
     }
 
     try {
-      const taskId = await this.processTask(schedule.mode, schedule.taskInstructions);
+      let taskInstructionsToUse = schedule.taskInstructions;
+      if (schedule.promptSelectionType === 'saved' && schedule.savedPromptId) {
+        const savedPrompt = await this.promptStorageService.getPrompt(schedule.savedPromptId);
+        if (savedPrompt && savedPrompt.content) {
+          taskInstructionsToUse = savedPrompt.content;
+        } else {
+          this.log(`Error: Saved prompt with ID ${schedule.savedPromptId} not found or has no content for schedule "${schedule.name}". Using original taskInstructions as fallback.`);
+          // Optionally, skip execution or use a default error prompt
+        }
+      }
+      const taskId = await this.processTask(schedule.mode, taskInstructionsToUse);
       await this.updateSchedule(schedule.id, {
         lastExecutionTime: new Date().toISOString(),
         lastTaskId: taskId,
@@ -864,7 +850,16 @@ export class SchedulerService {
       // We call processTask directly to avoid interfering with regular scheduling logic
       // like lastExecutionTime updates or automatic rescheduling, unless desired.
       // For now, this is an ad-hoc execution.
-      const taskId = await this.processTask(schedule.mode, schedule.taskInstructions);
+      let taskInstructionsToUse = schedule.taskInstructions;
+      if (schedule.promptSelectionType === 'saved' && schedule.savedPromptId) {
+        const savedPrompt = await this.promptStorageService.getPrompt(schedule.savedPromptId);
+        if (savedPrompt && savedPrompt.content) {
+          taskInstructionsToUse = savedPrompt.content;
+        } else {
+          this.log(`Error: Saved prompt with ID ${schedule.savedPromptId} not found or has no content for "Run Now" schedule "${schedule.name}". Using original taskInstructions as fallback.`);
+        }
+      }
+      const taskId = await this.processTask(schedule.mode, taskInstructionsToUse);
       this.log(`"Run Now" for schedule "${schedule.name}" started task ${taskId}.`);
       vscode.window.showInformationMessage(`Task "${schedule.name}" started manually.`);
       // Optionally, we could update a "lastManuallyRunTime" or similar if needed.
@@ -904,8 +899,17 @@ export class SchedulerService {
    			}))
    		};
    		
+   		let taskInstructionsToUse = schedule.taskInstructions;
+      if (schedule.promptSelectionType === 'saved' && schedule.savedPromptId) {
+        const savedPrompt = await this.promptStorageService.getPrompt(schedule.savedPromptId);
+        if (savedPrompt && savedPrompt.content) {
+          taskInstructionsToUse = savedPrompt.content;
+        } else {
+          this.log(`Error: Saved prompt with ID ${schedule.savedPromptId} not found or has no content for project schedule "${schedule.name}". Using original taskInstructions as fallback.`);
+        }
+      }
    		// Call processTask with the project info
-   		const taskId = await this.processTask(schedule.mode, schedule.taskInstructions, projectInfo);
+   		const taskId = await this.processTask(schedule.mode, taskInstructionsToUse, projectInfo);
   
    		this.log(`"Run Now" for project schedule "${schedule.name}" (Project: ${schedule.projectId}) started task ${taskId}.`);
    		vscode.window.showInformationMessage(`Task "${schedule.name}" (from project) started manually.`);

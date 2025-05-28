@@ -401,25 +401,86 @@ input[cmdk-input]:focus {
   /* Custom tab styling */
   .custom-tab-trigger {
     position: relative;
-    transition: all 0.2s ease-in-out;
+    transition: color 0.2s ease-in-out, border-color 0.2s ease-in-out;
+    background-color: transparent !important;
+    border-bottom: 1px solid transparent; /* Default transparent border for spacing (now 1px) */
+    padding-bottom: 1px; /* Ensure space for the 1px border */
+    color: var(--vscode-icon-foreground) !important; /* Default color for non-active text/icons */
+    border-radius: 0 !important; /* Remove border radius */
   }
 
+  /* Hover state for NON-ACTIVE tabs */
+  .custom-tab-trigger:not([data-state="active"]):hover {
+     color: var(--vscode-list-hoverForeground, var(--vscode-foreground)) !important;
+     background-color: transparent !important; /* Ensure background remains transparent */
+     border-bottom-color: var(--vscode-list-hoverForeground, var(--vscode-foreground)) !important; 
+  }
+  
+  .custom-tab-trigger:not([data-state="active"]):hover > span,
+  .custom-tab-trigger:not([data-state="active"]):hover > span.codicon {
+    color: var(--vscode-list-hoverForeground, var(--vscode-foreground)) !important;
+  }
+  .custom-tab-trigger:not([data-state="active"]):hover > span[style*="backgroundColor"] { /* For the dot icon */
+    background-color: var(--vscode-list-hoverForeground, var(--vscode-foreground)) !important;
+  }
+
+  /* STATIC ACTIVE Tab State (not hovered) */
   .custom-tab-trigger[data-state="active"] {
     background-color: transparent !important;
-    color: var(--vscode-button-background) !important;
+    border-bottom-style: solid !important;
+    border-bottom-width: 1px !important; /* Thinner underline */
+    border-bottom-color: var(--vscode-focusBorder, #007fd4) !important; /* Blue underline using focusBorder */
+    outline: none !important;
+    box-shadow: none !important;
+    color: var(--vscode-focusBorder, #007fd4) !important; /* Primary blue color for text using focusBorder */
+  }
+  
+  /* Children of STATIC ACTIVE Tab */
+  .custom-tab-trigger[data-state="active"] > span:not(.project-tab-dot-icon) { /* Text and non-dot codicons */
+    color: var(--vscode-focusBorder, #007fd4) !important; 
+  }
+  .custom-tab-trigger[data-state="active"] > .project-tab-dot-icon { /* Active Project dot icon background */
+    background-color: var(--vscode-focusBorder, #007fd4) !important; 
   }
 
-  .custom-tab-trigger[data-state="active"]::after {
-    content: "";
-    position: absolute;
-    bottom: -2px; /* Adjust as needed for underline position */
-    left: 0;
-    width: 100%;
-    height: 2px;
-    background-color: var(--vscode-button-background);
+  /* HOVER state for ACTIVE tabs (should be identical to static active) */
+  .custom-tab-trigger[data-state="active"]:hover {
+    background-color: transparent !important; /* Keep transparent */
+    border-bottom-color: var(--vscode-focusBorder, #007fd4) !important; /* Keep blue underline */
+    color: var(--vscode-focusBorder, #007fd4) !important; /* Keep blue text */
+  }
+  .custom-tab-trigger[data-state="active"]:hover > span:not([style*="backgroundColor"]) {
+    color: var(--vscode-focusBorder, #007fd4) !important; /* Keep children blue */
+  }
+  .custom-tab-trigger[data-state="active"]:hover > span[style*="backgroundColor"], /* Keep existing hover for other potential styled spans */
+  .custom-tab-trigger[data-state="active"]:hover > .project-tab-dot-icon {
+    background-color: var(--vscode-focusBorder, #007fd4) !important; /* Keep dot blue */
   }
 
-  .custom-tab-trigger[data-state="active"] .codicon {
-    color: var(--vscode-button-background);
+  /* Default state for project-tab-dot-icon */
+  .project-tab-dot-icon {
+    background-color: var(--vscode-icon-foreground); /* Default color for the project dot icon */
+  }
+
+  /* Non-Active Tab Children (default state, ensuring they use the parent's default color) */
+  /* This rule might be redundant now if .project-tab-dot-icon default handles it, but keep for other potential styled spans */
+  .custom-tab-trigger:not([data-state="active"]) > span[style*="backgroundColor"]:not(.project-tab-dot-icon) {
+     background-color: var(--vscode-icon-foreground) !important; 
+  }
+  /* Hover state for the project dot icon when tab is NOT active */
+  .custom-tab-trigger:not([data-state="active"]):hover > .project-tab-dot-icon {
+    background-color: var(--vscode-list-hoverForeground, var(--vscode-foreground)) !important;
+  }
+  /* Codicons and text spans in non-active tabs will inherit from .custom-tab-trigger's color: var(--vscode-icon-foreground) */
+
+  .custom-tabs-bar {
+    background-color: transparent !important;
+  }
+
+  .custom-tabs-list-transparent {
+    background-color: transparent !important;
+    /* The default p-1 from TabsList might still be desired for spacing.
+       If the "grey area" included this padding, we might need to set padding: 0 !important;
+       For now, only making background transparent as requested. */
   }
 }

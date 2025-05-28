@@ -1,49 +1,114 @@
 import React from 'react';
 import { useExtensionState } from '../../context/ExtensionStateContext';
 
-const SplashPage: React.FC = () => {
-  const { rootaskerLiteSvgUri, rootaskerDarkSvgUri } = useExtensionState();
+type ExampleItem = {
+  icon?: string; // Codicon class
+  text: string;
+};
 
-  // URIs for SVGs provided by the extension backend
-  const iconForDarkTheme = rootaskerDarkSvgUri; // Dark icon for dark backgrounds
-  const iconForLightTheme = rootaskerLiteSvgUri; // Lite icon for light backgrounds
+type SplashPageProps = {
+  tabType: 'schedules' | 'watchers' | 'projects' | 'generic';
+  title?: string;
+  description?: string;
+  examples?: ExampleItem[];
+  featureIcon?: string; // Codicon class for the main feature icon
+};
 
-  return (
-    <div
-      style={{
-        display: 'flex',
-        flexDirection: 'column',
-        alignItems: 'center',
-        justifyContent: 'center',
-        height: '100vh',
-        textAlign: 'center',
-        fontFamily: 'sans-serif',
-      }}
-    >
-      {iconForDarkTheme && iconForLightTheme && (
-        <picture>
-          <source
-            srcSet={iconForDarkTheme}
-            media="(prefers-color-scheme: dark)"
-          />
-          <source
-            srcSet={iconForLightTheme}
-            media="(prefers-color-scheme: light)"
-          />
+const SplashPage: React.FC<SplashPageProps> = ({
+  tabType,
+  title,
+  description,
+  examples,
+  featureIcon,
+}) => {
+	const { rootaskerLiteSvgUri, rootaskerDarkSvgUri } = useExtensionState();
+
+	interface SplashPageDefaultContentEntry {
+		title: string;
+		description: string;
+		featureIcon: string;
+		examples: ExampleItem[];
+	}
+
+	const defaultContent: Record<'schedules' | 'watchers' | 'projects' | 'generic', SplashPageDefaultContentEntry> = {
+		generic: {
+			title: "Welcome to RooTasker!",
+			description: "Your advanced task automation assistant.",
+			featureIcon: "codicon-rocket",
+			examples: [{ text: "Loading your workspace..." }] // This is valid for ExampleItem[] as icon is optional
+		},
+		schedules: {
+			title: "No Schedules Yet",
+			description: "Automate your workflows by creating scheduled tasks. Run tasks at specific times, intervals, or using cron expressions.",
+			featureIcon: "codicon-calendar",
+			examples: [
+				{ icon: "codicon-rocket", text: "One-time: Run a script tonight at 10 PM." },
+				{ icon: "codicon-history", text: "Interval: Summarize new emails every 30 minutes." },
+				{ icon: "codicon-gear", text: "Cron: Perform daily backups at 2 AM (0 2 * * *)." },
+				{ icon: "codicon-sync", text: "Recurring: Fetch AI news and post to WordPress/Obsidian weekly on Mondays." },
+			],
+		},
+		watchers: {
+			title: "No Watchers Yet",
+			description: "Automatically trigger tasks when files change in specified directories. Keep your projects in sync or react to new content.",
+			featureIcon: "codicon-eye",
+			examples: [
+				{ icon: "codicon-mic", text: "Watch a 'Voice Notes' directory synced from voicenotes.com. When a new transcript appears, trigger a Boomerang (orchestrator) agent to analyze and complete tasks described in the transcript." },
+				{ icon: "codicon-cloud-download", text: "Monitor a synced Google Drive folder for new documents to process." },
+				{ icon: "codicon-git-commit", text: "Trigger a build script when code changes in your 'src' directory." },
+			],
+		},
+		projects: {
+			title: "No Projects Yet",
+			description: "Organize your work by creating projects. Associate schedules and watchers with specific projects to manage them effectively.",
+			featureIcon: "codicon-project",
+			examples: [
+				{ icon: "codicon-code", text: "Software Project: Group development tasks, build scripts, and test watchers." },
+				{ icon: "codicon-book", text: "Fiction Novel: Schedule writing reminders, watch manuscript folders for changes." },
+				{ icon: "codicon-megaphone", text: "Non-Fiction Podcast: Manage episode research, watch audio edit folders, schedule publishing tasks." },
+			],
+		},
+	};
+
+	const currentTitle = title || defaultContent[tabType].title;
+	const currentDescription = description || defaultContent[tabType].description;
+	const currentExamples = examples || defaultContent[tabType].examples;
+	const currentFeatureIcon = featureIcon || defaultContent[tabType].featureIcon;
+
+	return (
+		<div className="flex flex-col items-center justify-start h-full text-center p-8 pt-20 text-vscode-editor-foreground"> {/* Changed justify-center to justify-start and added pt-20 */}
+			{rootaskerLiteSvgUri && rootaskerDarkSvgUri && (
+				<picture className="mb-2"> {/* Moved RooTasker logo up by reducing bottom margin */}
+					<source srcSet={rootaskerDarkSvgUri} media="(prefers-color-scheme: dark)" />
+          <source srcSet={rootaskerLiteSvgUri} media="(prefers-color-scheme: light)" />
           <img
-            src={iconForLightTheme} // Default to the icon for light themes
+            src={rootaskerLiteSvgUri}
             alt="RooTasker Logo"
-            style={{ width: '150px', marginBottom: '20px' }}
+            className="w-24 h-24" // Made logo smaller (150px to 96px approx)
           />
         </picture>
       )}
-      <h1 style={{ fontSize: '2em', margin: '0.5em 0' }}>Welcome to RooTasker!</h1>
-      <p style={{ fontSize: '1.2em', color: '#555' }}>
-        Your advanced task automation assistant.
+
+      {currentFeatureIcon && <span className={`codicon ${currentFeatureIcon} text-4xl mb-3 text-vscode-icon-foreground`}></span>}
+      
+      <h1 className="text-2xl font-semibold mb-2">{currentTitle}</h1>
+      <p className="text-md text-vscode-descriptionForeground mb-6 max-w-md">
+        {currentDescription}
       </p>
-      <p style={{ marginTop: '2em', fontSize: '0.9em', color: '#777' }}>
-        Loading your workspace...
-      </p>
+
+      {currentExamples && currentExamples.length > 0 && (
+        <div className="mt-4 text-left max-w-lg w-full">
+          <h2 className="text-lg font-medium mb-3 text-vscode-editor-foreground">Examples:</h2>
+          <ul className="space-y-2">
+            {currentExamples.map((example, index) => (
+              <li key={index} className="flex items-start text-sm text-vscode-descriptionForeground">
+                {example.icon && <span className={`codicon ${example.icon} mr-2 mt-0.5 text-vscode-icon-foreground`}></span>}
+                <span>{example.text}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
     </div>
   );
 };

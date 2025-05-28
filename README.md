@@ -43,22 +43,75 @@ Fine-tune how tasks interact with your workflow:
 - **Interrupt Mode**: Automatically interrupt any running task to execute the scheduled task
 - **Skip Mode**: Skip execution if another task is already running
 
+### 📝 Prompt Management
+
+Create, manage, and run reusable prompts directly within RooTasker:
+
+- **Centralized Prompt Library**: Store and organize your frequently used prompts.
+- **Easy Editing**: Edit prompt titles, content, and tags.
+- **Quick Execution**: Run any saved prompt directly with a "Run Now" button.
+- **Tagging & Filtering**: Organize prompts with tags for easy searching and categorization (filtering to be implemented).
+- **Example Prompts**: Get started quickly with a set of pre-defined example prompts for common development tasks.
+- **Integration with Schedules & Watchers**: Use saved prompts as the task instructions for scheduled tasks or file watchers.
+
 ### 🔌 Seamless Roo Code Integration
 
-RooTasker connects with [Roo Code](https://roocode.com/)'s extension points to:
+RooTasker exposes a comprehensive API via VS Code commands, allowing deep integration with [Roo Code](https://roocode.com/) and other extensions to:
 
-- Start new tasks in any available Roo Code mode
-- Pass custom instructions to Roo Code for each task
-- Maintain task history and status tracking
+- Programmatically manage projects, schedules, and watchers.
+- Trigger Roo Code tasks with custom instructions as part of an automated workflow.
+- Query RooTasker for information about its configuration and status.
 
-### 🤖 AI Assistant Access
+### 🤖 Programmatic and AI Assistant Access
 
-Control RooTasker through AI assistants using the Model Context Protocol (MCP):
+RooTasker's functionalities can be controlled programmatically through its VS Code command API. This allows:
 
-- Manage schedules and watchers directly through chat interfaces
-- Create, update, delete, and run tasks programmatically
-- Toggle schedule activation states
-- Get detailed information about your automation setup
+- Integration with other VS Code extensions.
+- Scripting of RooTasker actions from external tools or build processes.
+- Control by AI assistants (like Roo Code) that are capable of executing VS Code commands. All features such as managing schedules, watchers, projects, and triggering tasks are available via this API.
+
+## Programmatic API Access
+
+RooTasker's full functionality is available programmatically via VS Code's command API (`vscode.commands.executeCommand`). This allows for powerful integrations and scripting capabilities.
+
+The available commands and their expected parameters are defined by the `RooTaskerAPI` TypeScript interface, located in the `src/api/RooTaskerAPI.ts` file within the extension's source code. This interface serves as the contract for interacting with RooTasker.
+
+**Example: Creating a Project via the API**
+
+Here's how another VS Code extension or an external script (that can interface with VS Code commands) could create a new RooTasker project:
+
+```typescript
+// Ensure vscode module is available in your context
+// const vscode = require('vscode'); 
+
+async function createRooTaskerProject() {
+  try {
+    const projectDetails = await vscode.commands.executeCommand('rootasker.api.createProject', {
+      name: "My Automated Project",
+      description: "A project managed via RooTasker's command API",
+      directoryPath: "/path/to/your/project/folder", // Optional: provide a relevant path
+      color: "#3498DB" // Optional: specify a color
+    });
+
+    if (projectDetails && projectDetails.success && projectDetails.project) {
+      console.log("RooTasker Project created successfully:", projectDetails.project);
+    } else {
+      console.error("Failed to create RooTasker project:", projectDetails?.error || "Unknown error");
+    }
+  } catch (error) {
+    console.error("Error executing RooTasker command:", error);
+  }
+}
+
+// createRooTaskerProject();
+```
+
+Refer to the `RooTaskerAPI` interface in `src/api/RooTaskerAPI.ts` for a complete list of commands and their data structures for projects, schedules, and watchers.
+
+### Troubleshooting
+
+- **Command Not Found**: Ensure the RooTasker extension is installed and activated in VS Code.
+- **Incorrect Parameters**: Refer to the `RooTaskerAPI` interface and the JSDoc comments in `src/extension.ts` for the correct parameters and types for each command.
 
 ## Use Cases
 

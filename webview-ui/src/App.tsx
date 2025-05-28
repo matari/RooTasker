@@ -11,13 +11,15 @@ import { telemetryClient } from "./utils/TelemetryClient"
 import { ExtensionStateContextProvider, useExtensionState } from "./context/ExtensionStateContext"
 import SchedulerView from "./components/scheduler/SchedulerView"
 import WatchersView from "./components/watchers/WatchersView"
-import ProjectsView from "./components/projects/ProjectsView"; // Added import
+import ProjectsView from "./components/projects/ProjectsView"; 
+import PromptsView from "./components/prompts/PromptsView"; // Added for Prompts
+// import RecorderView from "./components/recorder/RecorderView"; // REMOVED for Recorder
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import SplashPage from "./components/common/SplashPage";
 import type { NavigationPayload } from "./types";
 import type { Project } from "../../src/shared/ProjectTypes"; // Import Project for onOpenEditProjectModal
 
-type MainAppTab = "projects" | "scheduler" | "watchers"; // Added "projects"
+type MainAppTab = "projects" | "scheduler" | "watchers" | "prompts"; // Added "prompts"
 
 const App = () => {
 	const { didHydrateState, telemetrySetting, telemetryKey, machineId } = useExtensionState()
@@ -61,37 +63,54 @@ const App = () => {
 	useEffect(() => vscode.postMessage({ type: "webviewDidLaunch" }), [])
 
 	if (!didHydrateState) {
-		return <SplashPage />; // Show SplashPage while hydrating
+		return <SplashPage tabType="generic" />; // Show SplashPage while hydrating
 	}
 
 	return (
 		<div className="flex flex-col h-screen"> {/* Main container */}
 			<Tabs value={activeMainTab} onValueChange={(value) => handleNavigateToTab(value as MainAppTab)} className="flex flex-col flex-grow">
 				{/* Header Section */}
-				<div className="flex justify-between items-center p-2 border-b border-vscode-panel-border">
+				<div className="flex justify-between items-center p-2 border-b border-vscode-panel-border custom-tabs-bar">
 					{/* Tabbed navigation on the left */}
-					<TabsList className="flex gap-4">
+					<TabsList className="flex gap-4 custom-tabs-list-transparent">
 						<TabsTrigger
 							value="projects"
-							className="flex items-center gap-1 px-2 py-1 bg-transparent border-none rounded-none text-vscode-icon-foreground hover:text-vscode-button-background custom-tab-trigger"
+							className="flex items-center gap-1 bg-transparent border-none rounded-none text-vscode-icon-foreground hover:text-vscode-button-background custom-tab-trigger"
 							title="Projects">
-							<span className="codicon codicon-project"></span>
+							<span
+								className="inline-block rounded-full w-2 h-2 mr-1.5 flex-shrink-0 project-tab-dot-icon"
+								aria-hidden="true"
+							/>
 							<span>Projects</span>
 						</TabsTrigger>
 						<TabsTrigger
 							value="scheduler"
-							className="flex items-center gap-1 px-2 py-1 bg-transparent border-none rounded-none text-vscode-icon-foreground hover:text-vscode-button-background custom-tab-trigger"
+							className="flex items-center gap-1 bg-transparent border-none rounded-none text-vscode-icon-foreground hover:text-vscode-button-background custom-tab-trigger"
 							title="Scheduled Tasks">
 							<span className="codicon codicon-calendar"></span>
 							<span>Scheduled Tasks</span>
 						</TabsTrigger>
 						<TabsTrigger
 							value="watchers"
-							className="flex items-center gap-1 px-2 py-1 bg-transparent border-none rounded-none text-vscode-icon-foreground hover:text-vscode-button-background custom-tab-trigger"
+							className="flex items-center gap-1 bg-transparent border-none rounded-none text-vscode-icon-foreground hover:text-vscode-button-background custom-tab-trigger"
 							title="Watchers">
 							<span className="codicon codicon-eye"></span>
 							<span>Watchers</span>
 						</TabsTrigger>
+						<TabsTrigger
+							value="prompts"
+							className="flex items-center gap-1 bg-transparent border-none rounded-none text-vscode-icon-foreground hover:text-vscode-button-background custom-tab-trigger"
+							title="Prompts">
+							<span className="codicon codicon-lightbulb"></span>
+							<span>Prompts</span>
+						</TabsTrigger>
+						{/* <TabsTrigger
+							value="recorder"
+							className="flex items-center gap-1 px-2 py-1 bg-transparent border-none rounded-none text-vscode-icon-foreground hover:text-vscode-button-background custom-tab-trigger"
+							title="Voice Recorder">
+							<span className="codicon codicon-mic"></span>
+							<span>Recorder</span>
+						</TabsTrigger> */} {/* REMOVED Recorder Tab Trigger */}
 					</TabsList>
 
 					{/* Action buttons on the right */}
@@ -111,6 +130,12 @@ const App = () => {
 								<span className="codicon codicon-add"></span>
 							</Button>
 						)}
+						{activeMainTab === 'prompts' && (
+							<Button size="sm" variant="ghost" onClick={() => handleNavigateToTab('prompts', { view: 'form' })} title="New Prompt">
+								<span className="codicon codicon-add"></span>
+							</Button>
+						)}
+						{/* No specific action button for recorder tab for now */}
 					</div>
 				</div>
 
@@ -137,6 +162,15 @@ const App = () => {
 							onInitialActionConsumed={() => setNavigationPayload(null)}
 						/>
 					</TabsContent>
+					<TabsContent value="prompts" className="h-full mt-0">
+						<PromptsView 
+							initialAction={activeMainTab === 'prompts' ? navigationPayload : null}
+							onInitialActionConsumed={() => setNavigationPayload(null)}
+						/>
+					</TabsContent>
+					{/* <TabsContent value="recorder" className="h-full mt-0">
+						<RecorderView />
+					</TabsContent> */} {/* REMOVED Recorder Tab Content */}
 				</div>
 			</Tabs>
 		</div>

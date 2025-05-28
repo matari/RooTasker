@@ -15,7 +15,7 @@ import {
 } from "../schemas"
 import { GitCommit } from "../utils/git"
 import { Mode } from "./modes"
-import { Project, BaseSchedule, BaseWatcher } from "./ProjectTypes"; // Added import
+import { Project, BaseSchedule, BaseWatcher, Prompt } from "./ProjectTypes"; // Added Prompt import
 
 export type { ApiConfigMeta, ToolProgressStatus }
 
@@ -70,6 +70,12 @@ export interface ExtensionMessage {
 		| "fileSearchResults"
 		| "toggleApiConfigPin"
 		| "schedulesUpdated"
+		| "projectsUpdated"  // Added
+		| "watchersUpdated"  // Added
+		| "promptsUpdated"   // Added for Prompts
+		| "setProjects" // For sending project list to webview
+		| "setPrompts" // Added for Prompts: Extension to Webview
+		// REMOVED Recorder specific messages: "setNgrokUrl", "setRecordingsForProject", "recordingOperationStatus", "audioFileUrl"
 	text?: string
 	action?:
 		| "chatButtonClicked"
@@ -113,6 +119,8 @@ export interface ExtensionMessage {
 		label?: string
 	}>
 	error?: string
+	payload?: any; // Generic payload, can be more specific for each type
+	// REMOVED Recorder-specific payload comments
 }
 
 export type ExtensionState = Pick<
@@ -190,7 +198,7 @@ export type ExtensionState = Pick<
 	experiments: Record<ExperimentId, boolean> // Map of experiment IDs to their enabled state
 
 	mcpEnabled: boolean
-	enableMcpServerCreation: boolean
+	// enableMcpServerCreation: boolean, // REMOVED - RooTasker no longer creates its own MCP server
 
 	mode: Mode
 	customModes: ModeConfig[]
@@ -211,6 +219,7 @@ export type ExtensionState = Pick<
 	projectSchedules?: Record<string, BaseSchedule[]>; // Keyed by projectId
 	projectWatchers?: Record<string, BaseWatcher[]>;  // Keyed by projectId
 	activeProjectId?: string | null; // ID of the currently active/selected project in UI
+	prompts?: Prompt[]; // Added for Prompts
 }
 
 export type { ClineMessage, ClineAsk, ClineSay }

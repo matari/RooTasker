@@ -1,10 +1,11 @@
 import React, { useState, useEffect, useCallback, forwardRef, useImperativeHandle, useMemo } from "react"
-import { Button, Input, Badge } from "@/components/ui"
+import { Button, Input, Badge, RadioGroup, RadioGroupItem } from "@/components/ui" // Added RadioGroup
 import { useExtensionState } from "../../context/ExtensionStateContext";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { AutosizeTextarea } from "@/components/ui/autosize-textarea"
 import { ModeConfig } from "../../../../src/shared/modes"
+import { Prompt } from "../../../../src/shared/ProjectTypes"; // Added Prompt import
 import { Schedule } from "./types"
 import LabeledInput from "./LabeledInput"
 import DaySelector from "./DaySelector"
@@ -61,6 +62,8 @@ const getDefinedForm = (initialData?: Partial<ScheduleFormData>): RequiredSchedu
   name: initialData?.name ?? "",
   mode: initialData?.mode ?? "code",
 	taskInstructions: initialData?.taskInstructions ?? "",
+  promptSelectionType: initialData?.promptSelectionType ?? "custom",
+  savedPromptId: initialData?.savedPromptId ?? "",
 	scheduleKind: initialData?.scheduleKind ?? "interval",
 	recurrenceType: initialData?.recurrenceType ?? "daily",
 	recurrenceDay: initialData?.recurrenceDay ?? 1,
@@ -89,10 +92,14 @@ const getDefinedForm = (initialData?: Partial<ScheduleFormData>): RequiredSchedu
 
 const ScheduleForm = forwardRef<ScheduleFormHandle, ScheduleFormProps>(
 	({ initialData, isEditing, availableModes, onSave, onCancel, onValidityChange }, ref) => {
-		const { projects, activeProjectId } = useExtensionState();
+		const { projects, activeProjectId, prompts } = useExtensionState(); // Added prompts
 		const [activeScheduleKindTab, setActiveScheduleKindTab] = useState<"one-time" | "interval" | "cron" | "recurring">(
 			initialData?.scheduleKind || "interval",
 		)
+		// Initialize promptSelectionType based on initialData or default to 'custom'
+		const [promptSelectionType, setPromptSelectionType] = useState<'custom' | 'saved'>(
+			initialData?.promptSelectionType || 'custom'
+		);
 
 		// For new schedules, we'll use allDaysSelected (all true) as the initial state
 		// For editing, use the provided selectedDays or defaultDays
@@ -131,10 +138,13 @@ const ScheduleForm = forwardRef<ScheduleFormHandle, ScheduleFormProps>(
 			const baseValid =
 				!!form.name.trim() &&
 				!!form.mode &&
-				!!form.projectId && // Ensure a project is selected
-				!!form.taskInstructions.trim() &&
+				!!form.projectId && 
 				(form.taskInteraction !== "wait" ||
 					(!!form.inactivityDelay && !isNaN(Number(form.inactivityDelay)) && Number(form.inactivityDelay) > 0));
+			
+			const promptValid = form.promptSelectionType === 'custom' ? !!form.taskInstructions.trim() : !!form.savedPromptId;
+
+			if (!baseValid || !promptValid) return false;
 
 			if (!baseValid) return false;
 
@@ -176,8 +186,10 @@ const ScheduleForm = forwardRef<ScheduleFormHandle, ScheduleFormProps>(
 
 		// Update form's scheduleKind when tab changes
 		useEffect(() => {
-			setField("scheduleKind", activeScheduleKindTab)
-		}, [activeScheduleKindTab])
+			setField("scheduleKind", activeScheduleKindTab);
+			// Also update promptSelectionType in main form state when local state changes
+			setField("promptSelectionType", promptSelectionType);
+		}, [activeScheduleKindTab, promptSelectionType])
 
 		// Expose submitForm to parent via ref
 		useImperativeHandle(ref, () => ({
@@ -465,36 +477,93 @@ const ScheduleForm = forwardRef<ScheduleFormHandle, ScheduleFormProps>(
 						</div>
 						<div className="flex flex-col gap-2">
 							<label className="text-vscode-descriptionForeground text-sm">
-								Prompt
-								<span className="text-red-500 ml-0.5">*</span>
+								Prompt Source
 							</label>
-							<AutosizeTextarea
-								className="w-full p-3 bg-vscode-input-background !bg-vscode-input-background border border-vscode-input-border"
-								minHeight={100}
-								maxHeight={300}
-								placeholder="Enter task instructions..."
-								value={form.taskInstructions}
-								onChange={(e) => setField("taskInstructions", e.target.value)}
-							/>
+							<RadioGroup 
+								value={promptSelectionType} 
+								onValueChange={(value: 'custom' | 'saved') => {
+									setPromptSelectionType(value);
+									setField("promptSelectionType", value); // Update main form state
+									if (value === 'custom') setField("savedPromptId", ""); // Clear savedPromptId if switching to custom
+									else setField("taskInstructions", ""); // Clear custom instructions if switching to saved
+								}} 
+								className="flex space-x-2"
+							>
+								<div className="flex items-center space-x-1">
+									<RadioGroupItem value="custom" id="promptCustom" />
+									<label htmlFor="promptCustom" className="text-sm">Custom</label>
+								</div>
+								<div className="flex items-center space-x-1">
+									<RadioGroupItem value="saved" id="promptSaved" />
+									<label htmlFor="promptSaved" className="text-sm">Use Saved Prompt</label>
+								</div>
+							</RadioGroup>
 						</div>
+
+						{promptSelectionType === 'custom' && (
+							<div className="flex flex-col gap-2">
+								<label className="text-vscode-descriptionForeground text-sm">
+									Custom Prompt
+									<span className="text-red-500 ml-0.5">*</span>
+								</label>
+								<AutosizeTextarea
+									className="w-full p-3 bg-vscode-input-background !bg-vscode-input-background border border-vscode-input-border"
+									minHeight={100}
+									maxHeight={300}
+									placeholder="Enter task instructions..."
+									value={form.taskInstructions}
+									onChange={(e) => setField("taskInstructions", e.target.value)}
+								/>
+							</div>
+						)}
+
+						{promptSelectionType === 'saved' && (
+							<div className="flex flex-col gap-2">
+								<label className="text-vscode-descriptionForeground text-sm">
+									Select Saved Prompt
+									<span className="text-red-500 ml-0.5">*</span>
+								</label>
+								<Select 
+									value={form.savedPromptId} 
+									onValueChange={(v) => setField("savedPromptId", v)}
+									disabled={!prompts || prompts.length === 0}
+								>
+									<SelectTrigger className="w-full bg-vscode-dropdown-background !bg-vscode-dropdown-background hover:!bg-vscode-dropdown-background border border-vscode-dropdown-border">
+										<SelectValue placeholder={!prompts || prompts.length === 0 ? "No saved prompts available" : "Select a prompt"} />
+									</SelectTrigger>
+									<SelectContent>
+										{prompts?.filter(p => !p.isArchived).map((prompt) => (
+											<SelectItem key={prompt.id} value={prompt.id}>
+												{prompt.title}
+											</SelectItem>
+										))}
+									</SelectContent>
+								</Select>
+								{(!prompts || prompts.length === 0) && (
+									<p className="text-xs text-vscode-errorForeground mt-1">
+										No saved prompts available. Create one in the Prompts tab.
+									</p>
+								)}
+							</div>
+						)}
 					</div>
 				</div>
 				<div className="flex flex-col gap-3">
 				<Tabs value={activeScheduleKindTab} onValueChange={(value) => setActiveScheduleKindTab(value as "one-time" | "interval" | "cron" | "recurring")} className="w-full">
-						<TabsList className="grid w-full grid-cols-4">
-							<TabsTrigger value="one-time">
+						<TabsList className="grid w-full grid-cols-4 custom-tabs-list-transparent">
+							<TabsTrigger value="one-time" className="custom-tab-trigger">
 								<span className="codicon codicon-rocket mr-1"></span>
 								One-time
 							</TabsTrigger>
-							<TabsTrigger value="recurring">
+							<TabsTrigger value="recurring" className="custom-tab-trigger">
 								<span className="codicon codicon-sync mr-1"></span>
 								Recurring
 							</TabsTrigger>
-							<TabsTrigger value="interval">
+							<TabsTrigger value="interval" className="custom-tab-trigger">
 								<span className="codicon codicon-clock mr-1"></span>
 								Interval
 							</TabsTrigger>
-							<TabsTrigger value="cron">
+							<TabsTrigger value="cron" className="custom-tab-trigger">
 								<span className="codicon codicon-gear mr-1"></span>
 								Cron
 							</TabsTrigger>
@@ -941,14 +1010,7 @@ const ScheduleForm = forwardRef<ScheduleFormHandle, ScheduleFormProps>(
 						</TabsContent>
 					</Tabs>
 				</div>
-				<div className="flex justify-end mt-6 gap-3">
-					<Button variant="secondary" onClick={onCancel}>
-						Cancel
-					</Button>
-					<Button onClick={handleSave} disabled={!isValid}>
-						{isEditing ? "Update Schedule" : "Save Schedule"}
-					</Button>
-				</div>
+				{/* Buttons removed from here, handled by SchedulerView.tsx */}
 			</div>
 		)
 	},

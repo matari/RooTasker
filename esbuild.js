@@ -122,6 +122,8 @@ const copyLocalesFiles = {
 	},
 }
 
+// REMOVED copyRecorderUiFiles function and copyRecorderUiPlugin
+
 const extensionConfig = {
 	bundle: true,
 	minify: production,
@@ -129,6 +131,7 @@ const extensionConfig = {
 	logLevel: "silent",
 	plugins: [
 		copyLocalesFiles,
+		// copyRecorderUiPlugin, // REMOVED plugin to copy recorder-ui
 		/* add to the end of plugins array */
 		esbuildProblemMatcherPlugin,
 		{
@@ -150,22 +153,39 @@ const extensionConfig = {
 	external: ["vscode"], // @modelcontextprotocol/sdk removed from external to allow bundling via specific path
 }
 
+// const mcpServerConfig = { // MCP Server REMOVED
+// 	...extensionConfig, 
+// 	entryPoints: ["src/mcp-server-main.ts"],
+// 	outfile: "dist/mcp-server-main.js",
+// }
+
+
 async function main() {
 	const extensionCtx = await esbuild.context(extensionConfig)
+	// const mcpServerCtx = await esbuild.context(mcpServerConfig) // MCP Server REMOVED
 
 	if (watch) {
-		// Start the esbuild watcher
+		// Start the esbuild watchers
 		await extensionCtx.watch()
+		// await mcpServerCtx.watch() // MCP Server REMOVED
 
 		// Copy and watch locale files
 		console.log("Copying locale files initially...")
 		copyLocaleFiles()
+		// console.log("Copying recorder-ui files initially...") // REMOVED
+		// copyRecorderUiFiles() // REMOVED Also copy recorder UI files
 
 		// Set up the watcher for locale files
 		setupLocaleWatcher()
+		// TODO: Could add a watcher for recorder-ui files if needed during watch mode
 	} else {
 		await extensionCtx.rebuild()
+		// await mcpServerCtx.rebuild() // MCP Server REMOVED
+		copyLocaleFiles() // Ensure files are copied for production build too
+		// copyRecorderUiFiles() // REMOVED Ensure recorder UI files are copied for production build
+		
 		await extensionCtx.dispose()
+		// await mcpServerCtx.dispose() // MCP Server REMOVED
 	}
 }
 

@@ -306,7 +306,7 @@ type GlobalSettings = {
 		| undefined
 	telemetrySetting?: ("unset" | "enabled" | "disabled") | undefined
 	mcpEnabled?: boolean | undefined
-	enableMcpServerCreation?: boolean | undefined
+	// enableMcpServerCreation?: boolean | undefined; // REMOVED
 	mode?: string | undefined
 	modeApiConfigs?:
 		| {

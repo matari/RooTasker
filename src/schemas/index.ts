@@ -543,7 +543,7 @@ export const globalSettingsSchema = z.object({
 	telemetrySetting: telemetrySettingsSchema.optional(),
 
 	mcpEnabled: z.boolean().optional(),
-	enableMcpServerCreation: z.boolean().optional(),
+	// enableMcpServerCreation: z.boolean().optional(), // REMOVED - RooTasker no longer creates its own MCP server
 
 	mode: z.string().optional(),
 	modeApiConfigs: z.record(z.string(), z.string()).optional(),
@@ -614,7 +614,7 @@ const globalSettingsRecord: GlobalSettingsRecord = {
 	telemetrySetting: undefined,
 
 	mcpEnabled: undefined,
-	enableMcpServerCreation: undefined,
+	// enableMcpServerCreation: undefined, // REMOVED
 
 	mode: undefined,
 	modeApiConfigs: undefined,

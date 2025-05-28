@@ -14,5 +14,6 @@ export * from "./separator"
 export * from "./slider"
 export * from "./select-dropdown"
 export * from "./select"
+export * from "./radio-group" // Added for RadioGroup and RadioGroupItem
 export * from "./textarea"
 export * from "./tooltip"

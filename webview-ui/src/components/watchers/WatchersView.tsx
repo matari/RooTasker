@@ -1,53 +1,107 @@
-import React, { useState, useMemo, useRef, useEffect } from "react"; // Added useEffect
+import React, { useState, useMemo, useRef, useEffect } from "react";
 import { Button } from "../../components/ui/button";
 import { Tabs, TabsContent } from "../../components/ui/tabs";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"; // Added Select
 import { useExtensionState } from "../../context/ExtensionStateContext";
-// Plus icon is no longer used here as the add button is global
 import { vscode } from "../../utils/vscode";
-// import { Tab, TabContent, TabHeader } from "../common/Tab"; // Tab seems unused
-import { Watcher } from "./types";
+import { Watcher } from "./types"; // Ensure Watcher type includes projectId
 import WatcherForm from "./WatcherForm";
 import WatcherList from "./WatcherList";
 import type { WatcherFormHandle } from "./WatcherForm";
 import ConfirmationDialog from "../ui/confirmation-dialog";
 import { getAllModes } from "../../../../src/shared/modes";
 import SplashPage from "../common/SplashPage";
-import type { Project } from "../../../../src/shared/ProjectTypes"; // Import Project
-import type { NavigationPayload } from "../../types"; // Import NavigationPayload
+import type { Project } from "../../../../src/shared/ProjectTypes";
+import type { NavigationPayload } from "../../types";
+import { ArrowDownUp, ArrowUpNarrowWide, ArrowDownNarrowWide } from "lucide-react"; // Icons for sorting
 
 interface WatchersViewProps {
   initialAction?: NavigationPayload | null;
   onInitialActionConsumed?: () => void;
 }
 
-const WatchersView: React.FC<WatchersViewProps> = ({ initialAction, onInitialActionConsumed }) => {
-  const { customModes, projects, projectWatchers, activeProjectId, setActiveProjectId } = useExtensionState();
-  const [activeTab, setActiveTab] = useState<string>("watchers");
+type WatcherSortCriteria = "name" | "projectName" | "status" | "lastTriggeredTime" | "createdAt";
+type SortDirection = "asc" | "desc";
 
-  const watchers: Watcher[] = useMemo(() => {
-    if (activeProjectId && projectWatchers && projectWatchers[activeProjectId]) {
-      return projectWatchers[activeProjectId] as Watcher[];
+const WatchersView: React.FC<WatchersViewProps> = ({ initialAction, onInitialActionConsumed }) => {
+  const { customModes, projects, projectWatchers, activeProjectId } = useExtensionState(); // Removed setActiveProjectId as filter is local
+  
+  const [activeTab, setActiveTab] = useState<string>("watchers");
+  const [filterProjectId, setFilterProjectId] = useState<string>("all"); // "all" or a project ID
+
+  // Sorting state
+  const [sortCriteria, setSortCriteria] = useState<WatcherSortCriteria>("createdAt");
+  const [sortDirection, setSortDirection] = useState<SortDirection>("desc");
+
+  const watchersWithProjectName = useMemo(() => {
+    if (!projectWatchers) return [];
+    let allWatchers: Watcher[] = [];
+    if (filterProjectId === "all") {
+      allWatchers = Object.values(projectWatchers).flat();
+    } else {
+      allWatchers = projectWatchers[filterProjectId] || [];
     }
-    return [];
-  }, [activeProjectId, projectWatchers]);
+    return allWatchers.map(w => ({
+      ...w,
+      projectName: projects?.find(p => p.id === w.projectId)?.name || "Unknown Project",
+    }));
+  }, [filterProjectId, projectWatchers, projects]);
+
+  const displayedWatchers = useMemo(() => {
+    let sorted = [...watchersWithProjectName];
+    sorted.sort((a, b) => {
+      let valA: any = '';
+      let valB: any = '';
+
+      switch (sortCriteria) {
+        case "name":
+          valA = a.name.toLowerCase();
+          valB = b.name.toLowerCase();
+          break;
+        case "projectName":
+          valA = a.projectName?.toLowerCase() || '';
+          valB = b.projectName?.toLowerCase() || '';
+          break;
+        case "status": // Assuming 'active' boolean: true (active) comes before false (inactive)
+          valA = a.active === false ? 1 : 0; // false is "greater" so it comes later in asc
+          valB = b.active === false ? 1 : 0;
+          break;
+        case "lastTriggeredTime":
+          valA = a.lastTriggeredTime ? new Date(a.lastTriggeredTime).getTime() : 0;
+          valB = b.lastTriggeredTime ? new Date(b.lastTriggeredTime).getTime() : 0;
+          break;
+        case "createdAt":
+          valA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+          valB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+          break;
+        default:
+          return 0;
+      }
+
+      if (valA < valB) return sortDirection === "asc" ? -1 : 1;
+      if (valA > valB) return sortDirection === "asc" ? 1 : -1;
+      return 0;
+    });
+    return sorted;
+  }, [watchersWithProjectName, sortCriteria, sortDirection]);
+  
   const [selectedWatcherId, setSelectedWatcherId] = useState<string | null>(null);
   const [isEditing, setIsEditing] = useState<boolean>(false);
   const [initialFormData, setInitialFormData] = useState<Partial<Watcher>>({});
   const [dialogOpen, setDialogOpen] = useState(false);
   const [watcherToDelete, setWatcherToDelete] = useState<string | null>(null);
-  const watcherFormRef = useRef<WatcherFormHandle>(null); // Uncommented
+  const watcherFormRef = useRef<WatcherFormHandle>(null);
   const [isFormValid, setIsFormValid] = useState(false);
 
   const availableModes = useMemo(() => getAllModes(customModes), [customModes]);
 
-  // Helper function to format dates (can be moved to a common util later)
-  const formatDate = (dateString: string) => {
+  const formatDate = (dateString: string | undefined) => {
     if (!dateString) return "N/A";
     const date = new Date(dateString);
     return date.toLocaleString(undefined, {
       month: 'numeric',
       day: 'numeric',
-      year: 'numeric', // Keep year for watchers for clarity
+      year: 'numeric',
       hour: 'numeric',
       minute: '2-digit',
       hour12: true
@@ -56,42 +110,40 @@ const WatchersView: React.FC<WatchersViewProps> = ({ initialAction, onInitialAct
   
   useEffect(() => {
     if (initialAction?.view === 'form' && onInitialActionConsumed) {
-      resetForm(); // Clear any previous editing state
+      resetForm();
       if (initialAction.itemId && initialAction.projectId) {
-        // Editing an existing watcher
         console.log("WatchersView: Processing initialAction to EDIT form for watcher:", initialAction.itemId, "in project:", initialAction.projectId);
         const projectWatchersMap = projectWatchers || {};
         const watchersForProject = projectWatchersMap[initialAction.projectId] || [];
         const watcherToEdit = watchersForProject.find(w => w.id === initialAction.itemId);
         if (watcherToEdit) {
+          setFilterProjectId(initialAction.projectId); // Set filter to this project
           setSelectedWatcherId(watcherToEdit.id);
-          setInitialFormData({ ...watcherToEdit }); // Populate form with existing data
+          setInitialFormData({ ...watcherToEdit });
           setIsEditing(true);
           setActiveTab("edit");
         } else {
           console.warn(`WatchersView: Watcher with id ${initialAction.itemId} not found in project ${initialAction.projectId}`);
-          // Fallback to new watcher form for the project, or handle error
+          setFilterProjectId(initialAction.projectId);
           setInitialFormData({ projectId: initialAction.projectId });
           setIsEditing(false);
           setActiveTab("edit");
         }
       } else if (initialAction.projectId) {
-        // Creating a new watcher for a specific project
         console.log("WatchersView: Processing initialAction to CREATE new form for project:", initialAction.projectId);
+        setFilterProjectId(initialAction.projectId);
         setInitialFormData({ projectId: initialAction.projectId });
         setIsEditing(false);
         setActiveTab("edit");
       } else {
-        // Creating a new watcher without a pre-selected project (form will require selection)
-        // Use activeProjectId if available from context as a default for new items
         console.log("WatchersView: Processing initialAction to CREATE new form (project from active context or none):", activeProjectId);
-        setInitialFormData(prev => ({ ...prev, projectId: activeProjectId || undefined }));
+        setInitialFormData(prev => ({ ...prev, projectId: filterProjectId !== "all" ? filterProjectId : activeProjectId || undefined }));
         setIsEditing(false);
         setActiveTab("edit");
       }
-      onInitialActionConsumed(); // Notify App.tsx that the action has been processed
+      onInitialActionConsumed();
     }
-  }, [initialAction, onInitialActionConsumed, projectWatchers, activeProjectId]);
+  }, [initialAction, onInitialActionConsumed, projectWatchers, activeProjectId, filterProjectId]);
 
   const saveWatcher = (formData: Omit<Watcher, 'id' | 'createdAt' | 'updatedAt' | 'modeDisplayName'> & { projectId: string }) => {
   	if (!formData.projectId) {
@@ -101,23 +153,22 @@ const WatchersView: React.FC<WatchersViewProps> = ({ initialAction, onInitialAct
   	const selectedModeConfig = availableModes.find(mode => mode.slug === formData.mode);
   	const modeDisplayName = selectedModeConfig?.name || formData.mode;
   	
-  	// watcherPayload will already have projectId from the form.
   	const watcherPayload = { ...formData, modeDisplayName };
  
   	if (isEditing && selectedWatcherId) {
-  		const existingWatcher = watchers.find(w => w.id === selectedWatcherId);
+  		const existingWatcher = displayedWatchers.find(w => w.id === selectedWatcherId);
   		if (existingWatcher) {
   			vscode.postMessage({
   				type: "updateWatcherInProject",
-  				projectId: watcherPayload.projectId, // Use projectId from form for targeting
+  				projectId: watcherPayload.projectId, 
   				data: { ...existingWatcher, ...watcherPayload } as Watcher,
   			});
   		}
   	} else {
   		vscode.postMessage({
   			type: "addWatcherToProject",
-  			projectId: watcherPayload.projectId, // Use projectId from form for targeting
-  			data: watcherPayload, // data already contains projectId
+  			projectId: watcherPayload.projectId, 
+  			data: watcherPayload, 
   		});
   	}
   	resetForm();
@@ -125,9 +176,10 @@ const WatchersView: React.FC<WatchersViewProps> = ({ initialAction, onInitialAct
   };
 
   const editWatcher = (watcherId: string) => {
-    const watcher = watchers.find(w => w.id === watcherId);
+    const watcher = displayedWatchers.find(w => w.id === watcherId);
     if (watcher) {
       setSelectedWatcherId(watcherId);
+      if (watcher.projectId) setFilterProjectId(watcher.projectId);
       setInitialFormData({ ...watcher });
       setIsEditing(true);
       setActiveTab("edit");
@@ -135,13 +187,16 @@ const WatchersView: React.FC<WatchersViewProps> = ({ initialAction, onInitialAct
   };
 
   const deleteWatcher = (watcherIdToDelete: string) => {
-    if (!activeProjectId) {
-      console.error("Cannot delete watcher: No active project selected.");
+    const watcherRef = displayedWatchers.find(w => w.id === watcherIdToDelete);
+    const finalProjectId = watcherRef?.projectId || (filterProjectId !== "all" ? filterProjectId : activeProjectId);
+
+    if (!finalProjectId) {
+      console.error("Cannot delete watcher: Project ID could not be determined.");
       return;
     }
     vscode.postMessage({
       type: "deleteWatcherFromProject",
-      projectId: activeProjectId,
+      projectId: finalProjectId,
       watcherId: watcherIdToDelete,
     });
     if (selectedWatcherId === watcherIdToDelete) {
@@ -156,58 +211,97 @@ const WatchersView: React.FC<WatchersViewProps> = ({ initialAction, onInitialAct
   };
 
   const createNewWatcher = () => {
-  	// activeProjectId will be used by WatcherForm to pre-select the project if set.
-  	// If not set, WatcherForm's dropdown will be mandatory.
   	resetForm();
-  	setInitialFormData(prev => ({ ...prev, projectId: activeProjectId || undefined }));
+  	setInitialFormData(prev => ({ ...prev, projectId: filterProjectId !== "all" ? filterProjectId : activeProjectId || undefined }));
   	setActiveTab("edit");
   };
   
   const toggleWatcherActiveState = (watcherIdToToggle: string, currentActiveState: boolean | undefined) => {
-    if (!activeProjectId) return;
-    const watcherToUpdate = watchers.find(w => w.id === watcherIdToToggle);
-    if (watcherToUpdate) {
+    const watcherToUpdate = displayedWatchers.find(w => w.id === watcherIdToToggle);
+    if (watcherToUpdate && watcherToUpdate.projectId) {
       vscode.postMessage({
           type: "updateWatcherInProject",
-          projectId: activeProjectId,
-          data: { ...watcherToUpdate, active: !(currentActiveState !== false), projectId: activeProjectId } as Watcher,
+          projectId: watcherToUpdate.projectId,
+          data: { ...watcherToUpdate, active: !(currentActiveState !== false) } as Watcher,
       });
+    } else {
+      console.error("Cannot toggle watcher state: Watcher or its projectId not found.");
     }
+  };
+
+  const handleSortDirectionToggle = () => {
+    setSortDirection(prev => prev === "asc" ? "desc" : "asc");
   };
 
   return (
     <div className="h-full flex flex-col">
-      {/* Header section removed as per new instructions */}
-      
-      {/* Inner Tabs for list/edit form */}
-      <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full h-full flex flex-col flex-grow pt-2"> {/* Added pt-2 for spacing */}
-        <TabsContent value="watchers" className="space-y-2 flex-1 overflow-auto px-2"> {/* Added px-2 */}
-            {!activeProjectId ? (
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full h-full flex flex-col flex-grow pt-2">
+        <TabsContent value="watchers" className="space-y-2 flex-1 overflow-auto px-2">
+            {(filterProjectId === "all" && (!projects || projects.length === 0)) ? (
               <div className="text-center py-8 text-vscode-descriptionForeground">
-                Please select or create a project to manage watchers.
-              </div>
-            ) : watchers.length === 0 ? (
-              <SplashPage />
-            ) : (
-              <div className="h-full flex flex-col">
+                Please create a project to manage watchers.
+               </div>
+              ) : displayedWatchers.length === 0 && filterProjectId === "all" ? (
+               <SplashPage tabType="watchers" />
+              ) : displayedWatchers.length === 0 && filterProjectId !== "all" ? (
+                <div className="text-center py-8 text-vscode-descriptionForeground">
+                  No watchers found for this project. <Button variant="link" className="p-0 h-auto" onClick={createNewWatcher}>Create one?</Button>
+                </div>
+              ) : (
+               <div className="h-full flex flex-col">
+                <div className="flex items-center justify-between gap-2 mb-2 px-1 pt-1">
+                  <div className="flex items-center gap-2">
+                    <label htmlFor="project-filter-watchers" className="text-sm text-vscode-descriptionForeground">Project:</label>
+                    <Select value={filterProjectId} onValueChange={setFilterProjectId}>
+                      <SelectTrigger id="project-filter-watchers" className="w-[180px] h-8 text-xs">
+                        <SelectValue placeholder="Filter by project" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">All Projects</SelectItem>
+                        {projects?.map((project) => (
+                          <SelectItem key={project.id} value={project.id}>
+                            {project.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <label htmlFor="sort-criteria-watchers" className="text-sm text-vscode-descriptionForeground">Sort by:</label>
+                    <Select value={sortCriteria} onValueChange={(value) => setSortCriteria(value as WatcherSortCriteria)}>
+                        <SelectTrigger id="sort-criteria-watchers" className="w-[150px] h-8 text-xs">
+                            <SelectValue placeholder="Sort by" />
+                        </SelectTrigger>
+                        <SelectContent>
+                            <SelectItem value="name">Name</SelectItem>
+                            <SelectItem value="projectName">Project Name</SelectItem>
+                            <SelectItem value="status">Status</SelectItem>
+                            <SelectItem value="lastTriggeredTime">Last Triggered</SelectItem>
+                            <SelectItem value="createdAt">Date Created</SelectItem>
+                        </SelectContent>
+                    </Select>
+                    <Button variant="ghost" size="sm" onClick={handleSortDirectionToggle} className="h-8 w-8 p-0">
+                        {sortDirection === "asc" ? <ArrowUpNarrowWide className="h-4 w-4" /> : <ArrowDownNarrowWide className="h-4 w-4" />}
+                    </Button>
+                  </div>
+                </div>
                 <WatcherList
-                  watchers={watchers}
-                  projects={projects || []} // Pass projects array
+                  watchers={displayedWatchers}
+                  projects={projects || []} 
                   onEdit={editWatcher}
                   onDelete={(id) => {
                     setWatcherToDelete(id);
                     setDialogOpen(true);
                   }}
                   onDuplicate={(watcherId) => {
-                    if (!activeProjectId) return;
-                    const watcherToDuplicate = watchers.find(w => w.id === watcherId);
-                    if (watcherToDuplicate) {
-                    	const { id, createdAt, updatedAt, lastTriggeredTime, lastTaskId, projectId: projectToDuplicateIn, ...duplicableData } = watcherToDuplicate;
+                    const watcherToDuplicate = displayedWatchers.find(w => w.id === watcherId);
+                    if (watcherToDuplicate && watcherToDuplicate.projectId) {
+                    	const { id, createdAt, updatedAt, lastTriggeredTime, lastTaskId, ...duplicableData } = watcherToDuplicate;
                     	saveWatcher({
-                    		...duplicableData,
-                    		projectId: projectToDuplicateIn, // Explicitly set projectId
-                    		name: `${duplicableData.name} (Copy)`,
-                    		active: false, // Duplicates are inactive by default
+                    		...(duplicableData as Omit<Watcher, 'id'|'createdAt'|'updatedAt'|'lastTriggeredTime'|'lastTaskId'|'modeDisplayName'>),
+                    		name: `${(duplicableData as {name?: string}).name || 'Watcher'} (Copy)`,
+                    		active: false, 
+                            projectId: watcherToDuplicate.projectId,
                     	} as Omit<Watcher, 'id' | 'createdAt' | 'updatedAt' | 'modeDisplayName'> & { projectId: string });
                     }
                    }}
@@ -218,20 +312,19 @@ const WatchersView: React.FC<WatchersViewProps> = ({ initialAction, onInitialAct
               </div>
             )}
           </TabsContent>
-          <TabsContent value="edit" className="flex-1 overflow-auto px-2"> {/* Added px-2 and flex-1, removed mt-4 */}
+          <TabsContent value="edit" className="flex-1 overflow-auto px-2">
             <WatcherForm
               ref={watcherFormRef}
               initialData={initialFormData}
               isEditing={isEditing}
               availableModes={availableModes}
               onSave={saveWatcher}
-              onCancel={() => { // This onCancel is for the form itself, if it has one.
+              onCancel={() => { 
                 resetForm();
                 setActiveTab("watchers");
               }}
               onValidityChange={setIsFormValid}
             />
-            {/* Save and Cancel buttons for the form */}
             {activeTab === "edit" && (
               <div className="flex justify-end gap-2 mt-4 p-1 border-t border-vscode-panel-border">
                 <Button
@@ -255,7 +348,6 @@ const WatchersView: React.FC<WatchersViewProps> = ({ initialAction, onInitialAct
             )}
           </TabsContent>
         </Tabs>
-      {/* Confirmation Dialog for Watcher Deletion, moved to be a sibling of Tabs */}
       <ConfirmationDialog
         open={dialogOpen}
         onOpenChange={setDialogOpen}

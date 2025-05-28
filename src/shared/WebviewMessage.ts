@@ -145,6 +145,15 @@ export interface WebviewMessage {
 		| "deleteWatcherFromProject"
 		| "selectProjectDirectory" // For project form
 		| "projectDirectorySelected" // Response from backend
+		| "projectsUpdated" // Added for project list updates
+		| "getProjects" // For project view to request project list (was recorder)
+		| "getPrompts" // Added for Prompts: Webview to Extension
+		| "savePromptAndOpenFile" // Added for Prompts feature
+		| "runPromptNow" // Added for Prompts: Run Now feature
+		| "deletePrompt" // Added for Prompts: Delete feature
+		| "promptsUpdated" // Added for Prompts: Notify webview of updates
+		// REMOVED Recorder specific messages: "openRecorderPanel", "getNgrokUrl", "getRecordingsForProject", "playRecording", "renameRecording", "deleteRecording"
+		| "openExternalUrl" // General utility
 	text?: string
 	disabled?: boolean
 	askResponse?: ClineAskResponse
@@ -177,6 +186,11 @@ export interface WebviewMessage {
 	data?: any // Generic data payload for add/update operations
 	path?: string
 	taskId?: string
+	// REMOVED Payloads for recorder messages
+	url?: string; // For openExternalUrl
+	// filename?: string; // REMOVED
+	// oldFilename?: string; // REMOVED
+	// newFilename?: string; // REMOVED
 }
 
 export const checkoutDiffPayloadSchema = z.object({
@@ -196,4 +210,18 @@ export const checkoutRestorePayloadSchema = z.object({
 
 export type CheckpointRestorePayload = z.infer<typeof checkoutRestorePayloadSchema>
 
-export type WebViewMessagePayload = CheckpointDiffPayload | CheckpointRestorePayload
+// Payload for creating/updating a prompt and opening it
+export interface SavePromptPayload {
+  title: string;
+  description?: string;
+  tags?: string[];
+  promptId?: string; // For updates
+  // content will be handled by the editor part
+}
+
+export interface RunPromptNowPayload {
+  promptId: string;
+  mode?: string; // Optional: to specify which Roo Code mode to use
+}
+
+export type WebViewMessagePayload = CheckpointDiffPayload | CheckpointRestorePayload | SavePromptPayload | RunPromptNowPayload;

@@ -9,6 +9,7 @@ evals/**
 e2e/**
 node_modules/**
 src/**
+!src/integrations/theme/default-themes/**
 .gitignore
 .yarnrc
 esbuild.js
@@ -18,6 +19,13 @@ vsc-extension-quickstart.md
 **/*.map
 **/*.ts
 **/.vscode-test.*
+
+# Git and development files
+.git-blame-ignore-revs
+.gitconfig
+.vite-port
+**/tsconfig.tsbuildinfo
+**/.vite/**
 
 # Custom
 demo.gif
@@ -32,6 +40,52 @@ coverage/**
 locales/**
 benchmark/**
 
+# Development and build files
+*.md
+!README.md
+!CHANGELOG.md
+!LICENSE
+.tool-versions
+.npmrc
+.prettierrc.json
+jest.config.js
+scheduler-jest.config.js
+knip.json
+ellipsis.yaml
+flake.lock
+flake.nix
+fix_mcp_tools.js
+*-implementation-plan.md
+*-design.md
+communication-architecture.md
+CONTRIBUTING.md
+PRIVACY.md
+MCP_SERVER_IMPLEMENTATION.md
+mcp-server-fix-plan.md
+mcp-server-implementation-plan.md
+project-context-windows-implementation-plan.md
+project-schedules-run-now-implementation-plan.md
+project-selector-design.md
+tabbed-header-implementation-plan.md
+webconsole-errors.md
+
+# Backup directories
+backups/**
+.rootasker/**
+
+# Test files
+**/__tests__/**
+**/__mocks__/**
+**/test/**
+**/tests/**
+**/*.test.*
+**/*.spec.*
+setupTests.*
+
+# Storybook files
+**/stories/**
+**/*.stories.*
+
 # Ignore all webview-ui files except the build directory (https://github.com/microsoft/vscode-webview-ui-toolkit-samples/blob/main/frameworks/hello-world-react-cra/.vscodeignore)
 webview-ui/src/**
 webview-ui/public/**
@@ -41,18 +95,40 @@ webview-ui/README.md
 webview-ui/package.json
 webview-ui/package-lock.json
 webview-ui/node_modules/**
+webview-ui/.eslintrc.json
+webview-ui/.gitignore
+webview-ui/.npmrc
+webview-ui/components.json
+webview-ui/jest.config.cjs
 **/.gitignore
+
+# Additional exclusions for performance
+.git/**
+.husky/**
+**/.DS_Store
+**/Thumbs.db
+**/*.log
+**/*.tmp
+**/*.temp
+**/coverage/**
+**/dist/**
+**/build/**
+!dist/extension.js
+!dist/mcp-server-main.js
+!dist/i18n/**
+!webview-ui/build/**
+
+# Scripts directory
+scripts/**
 
 # Fix issue where codicons don't get packaged (https://github.com/microsoft/vscode-extension-samples/issues/692)
 !node_modules/@vscode/codicons/dist/codicon.css
 !node_modules/@vscode/codicons/dist/codicon.ttf
 
-# Include default themes JSON files used in getTheme
-!src/integrations/theme/default-themes/**
 
 # Include icons and images
 !assets/icons/**
 !assets/images/**
 
-# Include .env file for telemetry
-!.env
+# Exclude .env file from package
+.env

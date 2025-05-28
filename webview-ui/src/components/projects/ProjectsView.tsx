@@ -5,6 +5,7 @@ import type { Project } from '../../../../src/shared/ProjectTypes';
 import ProjectCard from './ProjectCard'; // Uncommented
 import ProjectForm from './ProjectForm'; // Uncommented
 import { vscode } from '../../utils/vscode'; // Added for posting messages
+import SplashPage from '../common/SplashPage'; // Added import
 
 interface ProjectsViewProps {
   onNavigateToTab: (tabKey: 'scheduler' | 'watchers', payload?: { view?: 'form'; projectId?: string; itemId?: string }) => void;
@@ -138,15 +139,13 @@ const ProjectsView: React.FC<ProjectsViewProps> = ({
         project={editingProject} // This will be null for "new", or a project for "edit"
         onSave={handleSaveProject}
       />
-
+   
       {projects.length === 0 && !isNewProjectModalOpen && !editingProject && (
-        <div className="flex-grow flex items-center justify-center">
-          <div className="text-center text-vscode-descriptionForeground">
-            No projects found. <br />Create your first project to organize your tasks and watchers.
-          </div>
-        </div>
+      	<div className="flex-grow flex items-center justify-center h-full"> {/* Ensure it takes full height for SplashPage */}
+      		<SplashPage tabType="projects" />
+      	</div>
       )}
-
+   
       {/* Container for the list of project cards. Added p-1 for overall padding. */}
       <div className="flex-grow overflow-auto space-y-3 p-1">
         {projects.map((project) => {
