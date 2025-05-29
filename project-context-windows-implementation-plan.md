@@ -227,11 +227,11 @@ public async runProjectSchedule(schedule: BaseSchedule): Promise<void> {
     // We have two options:
     
     // Option 1: Use the Roo Cline API from the new window context (challenging)
-    // Option 2: Modify the RooTasker extension to accept parameters for deferred task execution on startup
+    // Option 2: Modify the Roo+ extension to accept parameters for deferred task execution on startup
     
     // For now, we'll use a temporary workaround by creating a special marker file in the project
     // directory that the extension will check on startup and execute the task if present
-    const markerFilePath = path.join(projectPath, '.rootasker', 'pending-tasks.json');
+    const markerFilePath = path.join(projectPath, '.rooplus', 'pending-tasks.json');
     const pendingTask = {
       mode: schedule.mode,
       taskInstructions: schedule.taskInstructions,
@@ -258,7 +258,7 @@ public async runProjectSchedule(schedule: BaseSchedule): Promise<void> {
 }
 ```
 
-#### 3. Add startup code to check for pending tasks in the RooTasker extension activation function
+#### 3. Add startup code to check for pending tasks in the Roo+ extension activation function
 
 ```typescript
 export async function activate(context: vscode.ExtensionContext): Promise<void> {
@@ -277,7 +277,7 @@ async function checkForPendingTasks(context: vscode.ExtensionContext): Promise<v
       return; // No workspace open
     }
     
-    const pendingTasksPath = path.join(workspacePath, '.rootasker', 'pending-tasks.json');
+    const pendingTasksPath = path.join(workspacePath, '.rooplus', 'pending-tasks.json');
     if (!await fileExistsAtPath(pendingTasksPath)) {
       return; // No pending tasks
     }
@@ -356,8 +356,8 @@ VS Code supports multi-root workspaces where multiple projects can be opened sim
 3. **User Configuration**: Add a setting to allow users to control this behavior:
    ```json
    {
-     "rootasker.scheduler.openNewWindowForTasks": true,
-     "rootasker.scheduler.reuseExistingWindows": false
+     "rooplus.scheduler.openNewWindowForTasks": true,
+     "rooplus.scheduler.reuseExistingWindows": false
    }
    ```
 
@@ -431,7 +431,7 @@ Instead of using marker files, investigate if VS Code's extension API provides m
 export async function activate(context: vscode.ExtensionContext): Promise<void> {
   // Register a command that can be invoked with arguments
   const startTaskCommand = vscode.commands.registerCommand(
-    'rootasker.startTaskInWindow',
+    'rooplus.startTaskInWindow',
     async (mode: string, taskInstructions: string, scheduleName: string) => {
       try {
         const taskId = await RooService.startTaskWithMode(mode, taskInstructions);
@@ -456,7 +456,7 @@ await vscode.commands.executeCommand('vscode.openFolder', projectUri, true);
 // Construct a command that will be run in the new window
 // This requires constructing a proper URI command format
 const commandUri = vscode.Uri.parse(
-  `command:rootasker.startTaskInWindow?${encodeURIComponent(JSON.stringify([
+  `command:rooplus.startTaskInWindow?${encodeURIComponent(JSON.stringify([
     schedule.mode,
     schedule.taskInstructions,
     schedule.name

@@ -1,6 +1,6 @@
 {
-	"name": "rootasker",
-	"displayName": "RooTasker",
+	"name": "rooplus",
+	"displayName": "Roo+",
 	"description": "Advanced task automation for Roo Code with scheduling, file watching, and AI agent control via MCP",
 	"publisher": "MrMatari",
 	"version": "1.1.1",
@@ -18,9 +18,9 @@
 	},
 	"repository": {
 		"type": "git",
-		"url": "https://github.com/matari/RooTasker"
+		"url": "https://github.com/matari/RooPlus"
 	},
-	"homepage": "https://github.com/matari/RooTasker",
+	"homepage": "https://github.com/matari/RooPlus",
 	"categories": [
 		"AI",
 		"Chat",
@@ -45,7 +45,7 @@
 		"scheduler",
 		"roo code",
 		"roo",
-		"rootasker",
+		"rooplus",
 		"watcher",
 		"file watcher"
 	],
@@ -61,148 +61,148 @@
 		"viewsContainers": {
 			"activitybar": [
 				{
-					"id": "rootasker-ActivityBar",
-					"title": "RooTasker",
-					"icon": "assets/icons/RooTasker_dark.png"
+					"id": "rooplus-ActivityBar",
+					"title": "Roo+",
+					"icon": "assets/icons/RooPlus_dark.png"
 				}
 			]
 		},
 		"views": {
-			"rootasker-ActivityBar": [
+			"rooplus-ActivityBar": [
 				{
 					"type": "webview",
-					"id": "rootasker.SidebarProvider",
-					"name": ""
+					"id": "rooplus.SidebarProvider",
+					"name": "Roo+"
 				}
 			]
 		},
 		"commands": [
 			{
-				"command": "rootasker.reloadWindowDev",
+				"command": "rooplus.reloadWindowDev",
 				"title": "Reload Window (Dev Only)",
 				"icon": "$(refresh)",
 				"category": "Developer"
 			},
 			{
-				"command": "rootasker.openRooClineExtension",
+				"command": "rooplus.openRooClineExtension",
 				"title": "Open Roo Code Extension",
 				"icon": {
-					"light": "assets/icons/RooTasker_dark.png",
-					"dark": "assets/icons/RooTasker_lite.png"
+					"light": "assets/icons/RooPlus_dark.png",
+					"dark": "assets/icons/RooPlus_lite.png"
 				}
 			},
 			{
-				"command": "rootasker.api.createProject",
+				"command": "rooplus.api.createProject",
 				"title": "Create Project (API)",
-				"category": "RooTasker API"
+				"category": "Roo+ API"
 			},
 			{
-				"command": "rootasker.api.listProjects",
+				"command": "rooplus.api.listProjects",
 				"title": "List Projects (API)",
-				"category": "RooTasker API"
+				"category": "Roo+ API"
 			},
 			{
-				"command": "rootasker.api.getProject",
+				"command": "rooplus.api.getProject",
 				"title": "Get Project (API)",
-				"category": "RooTasker API"
+				"category": "Roo+ API"
 			},
 			{
-				"command": "rootasker.api.updateProject",
+				"command": "rooplus.api.updateProject",
 				"title": "Update Project (API)",
-				"category": "RooTasker API"
+				"category": "Roo+ API"
 			},
 			{
-				"command": "rootasker.api.deleteProject",
+				"command": "rooplus.api.deleteProject",
 				"title": "Delete Project (API)",
-				"category": "RooTasker API"
+				"category": "Roo+ API"
 			},
 			{
-				"command": "rootasker.api.createSchedule",
+				"command": "rooplus.api.createSchedule",
 				"title": "Create Schedule (API)",
-				"category": "RooTasker API"
+				"category": "Roo+ API"
 			},
 			{
-				"command": "rootasker.api.listSchedules",
+				"command": "rooplus.api.listSchedules",
 				"title": "List Schedules (API)",
-				"category": "RooTasker API"
+				"category": "Roo+ API"
 			},
 			{
-				"command": "rootasker.api.getSchedule",
+				"command": "rooplus.api.getSchedule",
 				"title": "Get Schedule (API)",
-				"category": "RooTasker API"
+				"category": "Roo+ API"
 			},
 			{
-				"command": "rootasker.api.updateSchedule",
+				"command": "rooplus.api.updateSchedule",
 				"title": "Update Schedule (API)",
-				"category": "RooTasker API"
+				"category": "Roo+ API"
 			},
 			{
-				"command": "rootasker.api.deleteSchedule",
+				"command": "rooplus.api.deleteSchedule",
 				"title": "Delete Schedule (API)",
-				"category": "RooTasker API"
+				"category": "Roo+ API"
 			},
 			{
-				"command": "rootasker.api.toggleScheduleActive",
+				"command": "rooplus.api.toggleScheduleActive",
 				"title": "Toggle Schedule Active (API)",
-				"category": "RooTasker API"
+				"category": "Roo+ API"
 			},
 			{
-				"command": "rootasker.api.runScheduleNow",
+				"command": "rooplus.api.runScheduleNow",
 				"title": "Run Schedule Now (API)",
-				"category": "RooTasker API"
+				"category": "Roo+ API"
 			},
 			{
-				"command": "rootasker.api.createWatcher",
+				"command": "rooplus.api.createWatcher",
 				"title": "Create Watcher (API)",
-				"category": "RooTasker API"
+				"category": "Roo+ API"
 			},
 			{
-				"command": "rootasker.api.listWatchers",
+				"command": "rooplus.api.listWatchers",
 				"title": "List Watchers (API)",
-				"category": "RooTasker API"
+				"category": "Roo+ API"
 			},
 			{
-				"command": "rootasker.api.updateWatcher",
+				"command": "rooplus.api.updateWatcher",
 				"title": "Update Watcher (API)",
-				"category": "RooTasker API"
+				"category": "Roo+ API"
 			},
 			{
-				"command": "rootasker.api.deleteWatcher",
+				"command": "rooplus.api.deleteWatcher",
 				"title": "Delete Watcher (API)",
-				"category": "RooTasker API"
+				"category": "Roo+ API"
 			},
 			{
-				"command": "rootasker.api.toggleWatcherActive",
+				"command": "rooplus.api.toggleWatcherActive",
 				"title": "Toggle Watcher Active (API)",
-				"category": "RooTasker API"
+				"category": "Roo+ API"
 			},
 			{
-				"command": "rootasker.schedulesUpdated",
+				"command": "rooplus.schedulesUpdated",
 				"title": "Schedules Updated (Internal)",
-				"category": "RooTasker Internal"
+				"category": "Roo+ Internal"
 			},
 			{
-				"command": "rootasker.projectsUpdated",
+				"command": "rooplus.projectsUpdated",
 				"title": "Projects Updated (Internal)",
-				"category": "RooTasker Internal"
+				"category": "Roo+ Internal"
 			},
 			{
-				"command": "rootasker.watchersUpdated",
+				"command": "rooplus.watchersUpdated",
 				"title": "Watchers Updated (Internal)",
-				"category": "RooTasker Internal"
+				"category": "Roo+ Internal"
 			}
 		],
 		"menus": {
 			"view/title": [
 				{
-					"command": "rootasker.reloadWindowDev",
+					"command": "rooplus.reloadWindowDev",
 					"group": "navigation@0",
-					"when": "view == rootasker.SidebarProvider && rooSchedulerDevMode"
+					"when": "view == rooplus.SidebarProvider && rooSchedulerDevMode"
 				},
 				{
-					"command": "rootasker.openRooClineExtension",
+					"command": "rooplus.openRooClineExtension",
 					"group": "navigation@1",
-					"when": "view == rootasker.SidebarProvider"
+					"when": "view == rooplus.SidebarProvider"
 				}
 			]
 		}

@@ -6,7 +6,8 @@ import { Badge } from '@/components/ui/badge';
 import LabeledInput from '../scheduler/LabeledInput'; // Re-use LabeledInput if suitable
 import { Prompt } from '../../../../src/shared/ProjectTypes';
 
-export type PromptFormData = Pick<Prompt, 'title' | 'content' | 'tags'> & { description?: string }; // Added content field
+// Ensure content is string for the form data, as getDefinedForm guarantees it.
+export type PromptFormData = Omit<Pick<Prompt, 'title' | 'content' | 'tags' | 'description'>, 'content'> & { content: string };
 
 interface PromptFormProps {
   initialData?: Partial<PromptFormData>;
@@ -18,6 +19,7 @@ interface PromptFormProps {
 
 export interface PromptFormHandle {
   submitForm: () => void;
+  getFormData: () => PromptFormData; // Added to get current form data
 }
 
 const getDefinedForm = (initialData?: Partial<PromptFormData>): PromptFormData & { currentTagInput: string } => ({
@@ -46,6 +48,11 @@ const PromptForm = forwardRef<PromptFormHandle, PromptFormProps>(
 
     useImperativeHandle(ref, () => ({
       submitForm: () => handleSave(),
+      getFormData: () => {
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
+        const { currentTagInput, ...formDataToReturn } = form;
+        return formDataToReturn;
+      },
     }));
 
     const setField = <K extends keyof (PromptFormData & { currentTagInput: string })>(
@@ -112,6 +119,20 @@ const PromptForm = forwardRef<PromptFormHandle, PromptFormProps>(
         </div>
         
         <div className="flex flex-col gap-1">
+          <label className="text-vscode-descriptionForeground text-sm">
+            Prompt Content <span className="text-red-500">*</span>
+          </label>
+          <AutosizeTextarea
+            className="w-full p-3 bg-vscode-input-background !bg-vscode-input-background border border-vscode-input-border"
+            minHeight={200}
+            maxHeight={400}
+            placeholder="Enter your prompt content here..."
+            value={form.content}
+            onChange={(e) => setField('content', e.target.value)}
+          />
+        </div>
+
+        <div className="flex flex-col gap-1">
             <label className="text-vscode-descriptionForeground text-sm">
                 Tags (Optional)
             </label>
@@ -139,20 +160,6 @@ const PromptForm = forwardRef<PromptFormHandle, PromptFormProps>(
                 onBlur={handleAddTag} 
                 className="w-full"
             />
-        </div>
-        
-        <div className="flex flex-col gap-1">
-          <label className="text-vscode-descriptionForeground text-sm">
-            Prompt Content <span className="text-red-500">*</span>
-          </label>
-          <AutosizeTextarea
-            className="w-full p-3 bg-vscode-input-background !bg-vscode-input-background border border-vscode-input-border"
-            minHeight={200}
-            maxHeight={400}
-            placeholder="Enter your prompt content here..."
-            value={form.content}
-            onChange={(e) => setField('content', e.target.value)}
-          />
         </div>
         
         {/* Save/Cancel buttons will be handled by the parent PromptsView */}

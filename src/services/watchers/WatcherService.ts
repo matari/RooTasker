@@ -8,19 +8,23 @@ import { Watcher, WatchersFile } from '../../../webview-ui/src/components/watche
 import { ProjectStorageService } from '../../core/storage/ProjectStorageService'; 
 import { BaseWatcher } from '../../shared/ProjectTypes'; 
 import { PromptStorageService } from '../../core/storage/PromptStorageService'; // Added for prompt fetching
+import { getAllModes } from '../../shared/modes'; // For modeDisplayName
+import { CustomModesManager } from '../../core/config/CustomModesManager'; // For custom modes
 
 export class WatcherService {
 	private static instance: WatcherService;
-  private watchers: Watcher[] = [];
-  private watchersFilePath: string;
+  // private watchers: Watcher[] = []; // Will load from ProjectStorageService
+  // private watchersFilePath: string; // Obsolete if watchers are project-based
   private outputChannel: vscode.OutputChannel;
   private fileWatchers: Map<string, vscode.FileSystemWatcher> = new Map();
-  private promptStorageService: PromptStorageService; // Added
+  private promptStorageService: PromptStorageService;
+  private projectStorageService: ProjectStorageService; // Added
 
   private constructor(private context: vscode.ExtensionContext) {
-    this.watchersFilePath = path.join(getWorkspacePath(), '.rootasker', 'watchers.json');
+    // this.watchersFilePath = path.join(getWorkspacePath(), '.rootasker', 'watchers.json'); // Obsolete
     this.outputChannel = vscode.window.createOutputChannel('RooTasker Watchers');
-    this.promptStorageService = new PromptStorageService(context); // Initialize PromptStorageService
+    this.promptStorageService = new PromptStorageService(context);
+    this.projectStorageService = new ProjectStorageService(context); // Initialize ProjectStorageService
     context.subscriptions.push(this.outputChannel);
   }
 
@@ -33,157 +37,239 @@ export class WatcherService {
 
   public async initialize(): Promise<void> {
     this.log('Initializing WatcherService...');
-    await this.loadWatchers();
-    this.setupAllFileWatchers();
+    // Load watchers from all projects and set them up
+    await this.reloadAndSetupAllWatchers();
   }
 
-  private async loadWatchers(): Promise<void> {
-    try {
-      const exists = await fileExistsAtPath(this.watchersFilePath);
-      if (!exists) {
-        const dirPath = path.dirname(this.watchersFilePath);
-        try {
-            await fs.mkdir(dirPath, { recursive: true });
-        } catch (mkdirError) {
-            this.log(`Error creating directory ${dirPath}: ${mkdirError instanceof Error ? mkdirError.message : String(mkdirError)}`);
-        }
-        this.log(`Watchers file not found at ${this.watchersFilePath}, creating an empty one.`);
-        this.watchers = [];
-        await this.saveWatchers();
-        return;
+  // This method is now primarily for webview -> extension calls,
+  // actual storage is handled by ProjectStorageService.
+  // It ensures WatcherService's internal state (if any) and file system watchers are updated.
+  public async addWatcher(
+    projectId: string, 
+    // This type should align with what webviewMessageHandler sends, which can include modeDisplayName
+    watcherData: Omit<BaseWatcher, 'id' | 'projectId' | 'createdAt' | 'updatedAt'> 
+  ): Promise<BaseWatcher | undefined> {
+    this.log(`WatcherService: addWatcher called for project ${projectId} with data: ${JSON.stringify(watcherData)}`);
+    
+    let enrichedWatcherData = { ...watcherData };
+
+    // Ensure modeDisplayName is correctly set
+    if (watcherData.mode && !watcherData.modeDisplayName) {
+      // Need CustomModesManager to get all modes including custom ones
+      // This assumes WatcherService has access or can get an instance.
+      // For simplicity, if CustomModesManager is not directly injectable here,
+      // we might need to pass it or have a static way to get modes.
+      // Let's assume we can get it from context for now, or use a shared utility.
+      // Re-creating CustomModesManager here just to get modes is not ideal.
+      // Let's import getAllModes and CustomModesManager to do it properly.
+      const customModesManager = new CustomModesManager(this.context, async () => {}); // Temp instance for getting modes
+      const availableModes = getAllModes(await customModesManager.getCustomModes());
+      const modeConfig = availableModes.find(m => m.slug === watcherData.mode);
+      if (modeConfig && modeConfig.name) {
+        enrichedWatcherData.modeDisplayName = modeConfig.name;
+      } else {
+        enrichedWatcherData.modeDisplayName = watcherData.mode; // Fallback to slug
+        this.log(`Warning: modeDisplayName for mode "${watcherData.mode}" not found. Defaulting to slug.`);
       }
-      const content = await fs.readFile(this.watchersFilePath, 'utf-8');
-      const data = JSON.parse(content) as WatchersFile;
-      this.watchers = data.watchers || [];
-      this.log(`Loaded ${this.watchers.length} watchers from ${this.watchersFilePath}`);
-    } catch (error) {
-      this.log(`Error loading watchers: ${error instanceof Error ? error.message : String(error)}`);
-      this.watchers = [];
     }
-  }
 
-  private async saveWatchers(): Promise<void> {
-    try {
-      const dirPath = path.dirname(this.watchersFilePath);
-      if (!await fileExistsAtPath(dirPath)) {
-          await fs.mkdir(dirPath, { recursive: true });
+    const newWatcher = await this.projectStorageService.addWatcherToProject(projectId, enrichedWatcherData);
+    if (newWatcher) {
+      this.log(`Watcher added to storage: "${newWatcher.name}", ID: ${newWatcher.id}, Mode: ${newWatcher.mode}, DisplayName: ${newWatcher.modeDisplayName}`);
+      if (newWatcher.active) {
+        this.setupFileWatcher(newWatcher as Watcher); // Cast for now, ensure compatibility
       }
-      const content = JSON.stringify({ watchers: this.watchers }, null, 2);
-      await fs.writeFile(this.watchersFilePath, content, 'utf-8');
-      this.log('Watchers saved successfully.');
-      // Notify webview if needed, similar to schedulesUpdated
-      // vscode.commands.executeCommand('rootasker.watchersUpdated'); 
-    } catch (error) {
-      this.log(`Error saving watchers: ${error instanceof Error ? error.message : String(error)}`);
+      // Notify webview if needed (though postStateToWebview in handler might cover it)
+      // vscode.commands.executeCommand('rootasker.watchersUpdated');
     }
-  }
-
-  public getWatchers(): Watcher[] {
-    return [...this.watchers];
-  }
-
-  public async addWatcher(watcherData: Omit<Watcher, 'id' | 'createdAt' | 'updatedAt'>): Promise<Watcher | undefined> {
-    const newWatcher: Watcher = {
-      ...watcherData,
-      id: Date.now().toString() + Math.random().toString(36).substring(2, 9),
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-      active: watcherData.active !== undefined ? watcherData.active : true,
-    };
-    this.watchers.push(newWatcher);
-    await this.saveWatchers();
-    if (newWatcher.active) {
-      this.setupFileWatcher(newWatcher);
-    }
-    this.log(`Added new watcher: "${newWatcher.name}"`);
     return newWatcher;
   }
 
-  public async duplicateWatcher(watcherId: string): Promise<Watcher | undefined> {
-    const sourceWatcher = this.watchers.find(w => w.id === watcherId);
-    if (!sourceWatcher) {
-      this.log(`Watcher with ID ${watcherId} not found for duplication.`);
-      return undefined;
+
+  public async reloadAndSetupAllWatchers(): Promise<void> {
+    this.log('Reloading and setting up all watchers...');
+    const allProjects = await this.projectStorageService.getProjects();
+    let allWatchers: BaseWatcher[] = [];
+
+    for (const project of allProjects) {
+      const projectWatchers = await this.projectStorageService.getWatchersForProject(project.id);
+      allWatchers = allWatchers.concat(projectWatchers);
     }
-
-    const now = new Date().toISOString();
-    const newWatcher: Watcher = {
-      ...JSON.parse(JSON.stringify(sourceWatcher)), // Deep clone to avoid reference issues
-      id: Date.now().toString() + Math.random().toString(36).substring(2, 9), // New unique ID
-      name: `${sourceWatcher.name} - Copy`,
-      active: false, // Start as inactive by default
-      createdAt: now,
-      updatedAt: now,
-      lastTriggeredTime: undefined, // Reset execution history
-      lastTaskId: undefined,
-    };
-
-    this.watchers.push(newWatcher);
-    await this.saveWatchers();
     
-    this.log(`Duplicated watcher "${sourceWatcher.name}" to "${newWatcher.name}"`);
+    this.log(`Loaded ${allWatchers.length} watchers from ProjectStorageService.`);
     
-    return newWatcher;
-  }
-
-  public async updateWatcher(watcherId: string, updates: Partial<Omit<Watcher, 'id' | 'createdAt'>>): Promise<Watcher | undefined> {
-    const watcherIndex = this.watchers.findIndex(w => w.id === watcherId);
-    if (watcherIndex === -1) {
-      this.log(`Watcher with ID ${watcherId} not found for update.`);
-      return undefined;
-    }
-    const oldWatcher = this.watchers[watcherIndex];
-    const updatedWatcher = { ...oldWatcher, ...updates, updatedAt: new Date().toISOString() };
-    this.watchers[watcherIndex] = updatedWatcher;
-    await this.saveWatchers();
-
-    // If active state changed or path/fileTypes changed, reset the watcher
-    if (oldWatcher.active !== updatedWatcher.active || oldWatcher.directoryPath !== updatedWatcher.directoryPath || JSON.stringify(oldWatcher.fileTypes) !== JSON.stringify(updatedWatcher.fileTypes)) {
-      this.removeFileWatcher(watcherId);
-      if (updatedWatcher.active) {
-        this.setupFileWatcher(updatedWatcher);
-      }
-    }
-    this.log(`Updated watcher: "${updatedWatcher.name}"`);
-    return updatedWatcher;
-  }
-
-  public async deleteWatcher(watcherId: string): Promise<void> {
-    const initialLength = this.watchers.length;
-    this.watchers = this.watchers.filter(w => w.id !== watcherId);
-    if (this.watchers.length < initialLength) {
-      await this.saveWatchers();
-      this.removeFileWatcher(watcherId);
-      this.log(`Deleted watcher with ID ${watcherId}`);
-    } else {
-      this.log(`Watcher with ID ${watcherId} not found for deletion.`);
-    }
-  }
-  
-  public async toggleWatcherActive(watcherId: string, active: boolean): Promise<Watcher | undefined> {
-    const watcher = this.watchers.find(w => w.id === watcherId);
-    if (!watcher) {
-      this.log(`Watcher with ID ${watcherId} not found for toggle.`);
-      return undefined;
-    }
-    if (watcher.active === active) {
-        this.log(`Watcher "${watcher.name}" is already ${active ? 'active' : 'inactive'}.`);
-        return watcher;
-    }
-    return this.updateWatcher(watcherId, { active });
-  }
-
-  private setupAllFileWatchers(): void {
+    // Clear existing file watchers
     this.fileWatchers.forEach(watcher => watcher.dispose());
     this.fileWatchers.clear();
-    this.watchers.forEach(watcher => {
+
+    // Setup new watchers
+    allWatchers.forEach(watcher => {
       if (watcher.active) {
-        this.setupFileWatcher(watcher);
+        // The Watcher type from UI and BaseWatcher from shared types might differ slightly.
+        // Ensure setupFileWatcher can handle BaseWatcher or adapt the type.
+        // For now, assuming BaseWatcher is compatible enough or casting.
+        this.setupFileWatcher(watcher as Watcher); // Cast for now, ensure compatibility
       }
     });
+    this.log('Finished setting up all file watchers.');
   }
 
-  private setupFileWatcher(watcher: Watcher): void {
+  // Methods like addWatcher, duplicateWatcher, updateWatcher, deleteWatcher, toggleWatcherActive
+  // will now primarily interact with ProjectStorageService and then call reloadAndSetupAllWatchers
+  // or a more targeted update if possible.
+  // For simplicity, a full reload might be acceptable for now.
+
+  // Example: updateWatcher needs to persist to ProjectStorageService
+  public async updateWatcher(watcherId: string, updates: Partial<Omit<BaseWatcher, 'id' | 'createdAt' | 'projectId'>>, projectId?: string): Promise<BaseWatcher | undefined> {
+    const targetProjectId = projectId || (await this.findWatcherProjectId(watcherId));
+    if (!targetProjectId) {
+        this.log(`Cannot update watcher ${watcherId}: Project ID not found or provided.`);
+        return undefined;
+    }
+    
+    const watchers = await this.projectStorageService.getWatchersForProject(targetProjectId);
+    const watcherIndex = watchers.findIndex(w => w.id === watcherId);
+
+    if (watcherIndex === -1) {
+      this.log(`Watcher with ID ${watcherId} not found in project ${targetProjectId} for update.`);
+      return undefined;
+    }
+    const oldWatcher = watchers[watcherIndex];
+    let updatedWatcherData = { 
+        ...oldWatcher, 
+        ...updates, 
+        updatedAt: new Date().toISOString() 
+    };
+
+    // If mode is being updated, also update modeDisplayName
+    if (updates.mode && updates.mode !== oldWatcher.mode) {
+      const customModesManager = new CustomModesManager(this.context, async () => {}); // Temp instance
+      const availableModes = getAllModes(await customModesManager.getCustomModes());
+      const modeConfig = availableModes.find(m => m.slug === updates.mode);
+      if (modeConfig && modeConfig.name) {
+        updatedWatcherData.modeDisplayName = modeConfig.name;
+      } else {
+        updatedWatcherData.modeDisplayName = updates.mode; // Fallback to slug
+        this.log(`Warning: modeDisplayName for new mode "${updates.mode}" not found during update. Defaulting to slug.`);
+      }
+    }
+    
+    this.log(`WatcherService.updateWatcher: Attempting to save updatedWatcherData: ${JSON.stringify(updatedWatcherData)} for watcher ID ${watcherId} in project ${targetProjectId}`);
+    const savedWatcher = await this.projectStorageService.updateWatcherInProject(targetProjectId, updatedWatcherData);
+    
+    if (savedWatcher) {
+        this.log(`Updated watcher: "${savedWatcher.name}" in project ${targetProjectId}`);
+        // If active state changed or path/fileTypes changed, reset the specific watcher
+        if (oldWatcher.active !== savedWatcher.active || oldWatcher.directoryPath !== savedWatcher.directoryPath || JSON.stringify(oldWatcher.fileTypes) !== JSON.stringify(savedWatcher.fileTypes)) {
+            this.removeFileWatcher(watcherId);
+            if (savedWatcher.active) {
+                this.setupFileWatcher(savedWatcher as Watcher); // Cast for now
+            }
+        }
+    }
+    return savedWatcher;
+  }
+  
+  private async findWatcherProjectId(watcherId: string): Promise<string | undefined> {
+    const allProjects = await this.projectStorageService.getProjects();
+    for (const project of allProjects) {
+        const watchers = await this.projectStorageService.getWatchersForProject(project.id);
+        if (watchers.some(w => w.id === watcherId)) {
+            return project.id;
+        }
+    }
+    return undefined;
+  }
+
+  // deleteWatcher and toggleWatcherActive would similarly use ProjectStorageService
+  // and then potentially call reloadAndSetupAllWatchers or a targeted update.
+
+  public async duplicateWatcher(watcherId: string, projectId?: string): Promise<BaseWatcher | undefined> {
+    const targetProjectId = projectId || (await this.findWatcherProjectId(watcherId));
+    if (!targetProjectId) {
+      this.log(`Cannot duplicate watcher ${watcherId}: Project ID not found or provided.`);
+      return undefined;
+    }
+    const watchers = await this.projectStorageService.getWatchersForProject(targetProjectId);
+    const sourceWatcher = watchers.find(w => w.id === watcherId);
+
+    if (!sourceWatcher) {
+      this.log(`Watcher with ID ${watcherId} not found in project ${targetProjectId} for duplication.`);
+      return undefined;
+    }
+
+    const { id, createdAt, updatedAt, lastTriggeredTime, lastTaskId, ...duplicableData } = sourceWatcher;
+    
+    const newWatcherData: Omit<BaseWatcher, 'id' | 'projectId' | 'createdAt' | 'updatedAt' | 'modeDisplayName'> = {
+      ...duplicableData,
+      name: `${sourceWatcher.name} - Copy`,
+      active: false, // Start as inactive by default
+    };
+
+    const duplicatedWatcher = await this.projectStorageService.addWatcherToProject(targetProjectId, newWatcherData);
+
+    if (duplicatedWatcher) {
+      this.log(`Duplicated watcher "${sourceWatcher.name}" to "${duplicatedWatcher.name}" in project ${targetProjectId}`);
+      // Duplicated watchers are set to inactive by default, so setupFileWatcher won't run unless explicitly activated later.
+      // If it were active, we'd call:
+      // if (duplicatedWatcher.active) {
+      //   this.setupFileWatcher(duplicatedWatcher as Watcher);
+      // }
+      // For now, no explicit setup is needed here as they start inactive.
+      // If the behavior changes for duplicated watchers to be active by default, this would need adjustment.
+    }
+    return duplicatedWatcher;
+  }
+  
+  public async deleteWatcher(watcherId: string, projectId?: string): Promise<boolean> {
+    const targetProjectId = projectId || (await this.findWatcherProjectId(watcherId));
+    if (!targetProjectId) {
+      this.log(`Cannot delete watcher ${watcherId}: Project ID not found or provided.`);
+      return false;
+    }
+    const success = await this.projectStorageService.deleteWatcherFromProject(targetProjectId, watcherId);
+    if (success) {
+      this.log(`Deleted watcher ${watcherId} from project ${targetProjectId} in storage.`);
+      this.removeFileWatcher(watcherId); // Remove active file system watcher
+      // No need to call reloadAndSetupAllWatchers if removeFileWatcher is efficient
+    }
+    return success;
+  }
+
+  public async toggleWatcherActive(watcherId: string, active: boolean, projectId?: string): Promise<BaseWatcher | undefined> {
+    const targetProjectId = projectId || (await this.findWatcherProjectId(watcherId));
+    if (!targetProjectId) {
+      this.log(`Cannot toggle watcher ${watcherId}: Project ID not found or provided.`);
+      return undefined;
+    }
+    
+    const watchers = await this.projectStorageService.getWatchersForProject(targetProjectId);
+    const watcherToUpdate = watchers.find(w => w.id === watcherId);
+
+    if (!watcherToUpdate) {
+      this.log(`Watcher ${watcherId} not found in project ${targetProjectId} for toggle.`);
+      return undefined;
+    }
+    if (watcherToUpdate.active === active) {
+      this.log(`Watcher "${watcherToUpdate.name}" is already ${active ? 'active' : 'inactive'}.`);
+      return watcherToUpdate;
+    }
+
+    const updatedWatcherData = { ...watcherToUpdate, active };
+    const savedWatcher = await this.projectStorageService.updateWatcherInProject(targetProjectId, updatedWatcherData);
+
+    if (savedWatcher) {
+      this.removeFileWatcher(watcherId);
+      if (savedWatcher.active) {
+        this.setupFileWatcher(savedWatcher as Watcher); // Cast for now
+      }
+      this.log(`Toggled watcher "${savedWatcher.name}" to ${active ? 'active' : 'inactive'}.`);
+    }
+    return savedWatcher;
+  }
+
+  // This method remains largely the same but operates on BaseWatcher
+  private setupFileWatcher(watcher: BaseWatcher): void { // Changed type to BaseWatcher
     if (!watcher.active || !watcher.directoryPath || watcher.fileTypes.length === 0) {
       return;
     }
@@ -208,7 +294,20 @@ export class WatcherService {
         this.log(`Setting up watcher for "${watcher.name}" on pattern: ${singleGlob}`);
 
         const handleChange = async (uri: vscode.Uri) => {
-        	this.log(`File change detected for watcher "${watcher.name}" (Project ID: ${watcher.projectId}): ${uri.fsPath}`);
+          this.log(`File change detected for watcher "${watcher.name}" (Project ID: ${watcher.projectId}): ${uri.fsPath}`);
+          
+          // Check for internal command mode
+          if (watcher.mode === 'internal-command' && watcher.prompt.startsWith('INTERNAL_COMMAND:PROCESS_IMPROVED_PROMPT:')) {
+            this.log(`Internal command watcher triggered for: ${uri.fsPath}`);
+            try {
+              await vscode.commands.executeCommand('rootasker._internal.processImprovedPrompt', { filePath: uri.fsPath });
+              // No need to update lastTriggeredTime or lastTaskId for internal system watchers like this.
+            } catch (cmdError) {
+              this.log(`Error executing internal command for watcher "${watcher.name}": ${cmdError instanceof Error ? cmdError.message : String(cmdError)}`);
+            }
+            return; // Stop further processing for this internal command
+          }
+
         	try {
         		const projectStorageService = new ProjectStorageService(this.context);
         		const project = await projectStorageService.getProject(watcher.projectId);

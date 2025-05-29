@@ -483,4 +483,18 @@ input[cmdk-input]:focus {
        If the "grey area" included this padding, we might need to set padding: 0 !important;
        For now, only making background transparent as requested. */
   }
+
+  /* Style for the "+" icon to match the logo */
+  .codicon-add {
+    color: #007ACC !important; /* VS Code Blue */
+    font-weight: bold !important; /* Corresponds to a thicker plus, adjust as needed */
+    /* If a specific stroke width is needed and the icon is SVG/font-icon that supports it:
+       stroke: #007ACC;
+       stroke-width: 2px; 
+       Note: Codicons are a font, so font-weight is more applicable.
+       If the plus icon were an SVG, stroke properties would be used.
+       For a font, making it bold is the common way to increase thickness.
+       If the visual result isn't thick enough, we might need to use a different icon or an SVG.
+    */
+  }
 }

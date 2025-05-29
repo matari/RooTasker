@@ -2,11 +2,12 @@ import * as vscode from 'vscode';
 import * as fs from 'fs/promises';
 import * as path from 'path';
 import { Project, BaseSchedule, BaseWatcher } from '../../shared/ProjectTypes';
+import { GlobalFileNames } from '../../shared/globalFileNames';
 
-const PROJECTS_KEY = 'rootasker.projects';
+const PROJECTS_KEY = 'rooplus.projects';
 // For individual project data, we might use keys like:
-// `rootasker.project.${projectId}.schedules`
-// `rootasker.project.${projectId}.watchers`
+// `rooplus.project.${projectId}.schedules`
+// `rooplus.project.${projectId}.watchers`
 
 export class ProjectStorageService {
   private context: vscode.ExtensionContext;
@@ -21,7 +22,7 @@ export class ProjectStorageService {
     return this.context.globalState.get<Project[]>(PROJECTS_KEY) || [];
   }
 
-  async saveProjects(projects: Project[]): Promise<void> {
+  private async saveProjects(projects: Project[]): Promise<void> { // Made private
     await this.context.globalState.update(PROJECTS_KEY, projects);
   }
 
@@ -34,14 +35,73 @@ export class ProjectStorageService {
     const projects = await this.getProjects();
     const now = new Date().toISOString();
     const newProject: Project = {
-      ...projectData,
-      id: vscode.env.machineId + Date.now().toString(), // Simple unique ID
+      ...projectData, // projectData now includes watchInputDirEnabled
+      id: `${vscode.env.machineId}-${Date.now().toString()}-${Math.random().toString(36).substring(2, 9)}`,
       createdAt: now,
       updatedAt: now,
     };
     projects.push(newProject);
     await this.saveProjects(projects);
+
+    // Conditionally create a watcher if watchInputDirEnabled is true
+    if (newProject.watchInputDirEnabled && newProject.directoryPath) {
+      try {
+        const { WatcherService } = await import('../../services/watchers/WatcherService');
+        const watcherService = WatcherService.getInstance(this.context);
+        const watcherName = `${newProject.name} Input`; // Default watcher name
+        const inputDirPath = path.join(newProject.directoryPath, 'Input');
+
+        // Ensure the Input directory exists
+        try {
+          await fs.mkdir(inputDirPath, { recursive: true });
+          console.log(`Ensured "Input" directory exists at: ${inputDirPath}`);
+        } catch (mkdirError) {
+          console.error(`Failed to create "Input" directory at ${inputDirPath}:`, mkdirError);
+          // Decide if we should proceed without the directory or throw/return
+        }
+
+        await watcherService.addWatcher(newProject.id, {
+          name: watcherName,
+          directoryPath: inputDirPath, // Watch the project's "Input" subdirectory
+          fileTypes: ['*.*'], // Default: watch all file types
+          prompt: '', // Default: empty prompt, user can edit
+          promptSelectionType: 'custom',
+          mode: 'code', // Default mode, can be changed by user
+          active: true, // Start active by default
+          // modeDisplayName will be populated by WatcherService.addWatcher
+        });
+        console.log(`Automatically created watcher "${watcherName}" for project "${newProject.name}".`);
+      } catch (error) {
+        console.error(`Failed to automatically create watcher for project "${newProject.name}":`, error);
+        // Optionally, inform the user via a vscode.window.showWarningMessage
+      }
+    }
+
     return newProject;
+  }
+
+  async ensureSystemProjectExists(): Promise<Project> {
+    const { GlobalFileNames } = await import('../../shared/globalFileNames');
+    let projects = await this.getProjects();
+    let systemProject = projects.find(p => p.id === GlobalFileNames.systemProjectId);
+
+    if (!systemProject) {
+      console.log("System project not found, creating one...");
+      const now = new Date().toISOString();
+      systemProject = {
+        id: GlobalFileNames.systemProjectId,
+        name: "Roo+ System",
+        description: "Internal project for Roo+ system tasks. Not typically user-editable.",
+        directoryPath: this.context.globalStorageUri.fsPath, // System project not tied to a user workspace
+        color: "#555555", // A muted color
+        createdAt: now,
+        updatedAt: now,
+      };
+      projects.push(systemProject);
+      await this.saveProjects(projects);
+      console.log("System project created.");
+    }
+    return systemProject;
   }
 
   async updateProject(updatedProject: Project): Promise<Project | undefined> {
@@ -50,15 +110,29 @@ export class ProjectStorageService {
     if (projectIndex === -1) {
       return undefined; // Project not found
     }
+    const oldProject = projects[projectIndex];
     projects[projectIndex] = {
-      ...updatedProject,
+      ...updatedProject, // updatedProject now includes watchInputDirEnabled
       updatedAt: new Date().toISOString(),
     };
     await this.saveProjects(projects);
+
+    // Handle watcher creation/deletion based on watchInputDirEnabled change
+    // For simplicity, as per plan, we only create on initial add.
+    // If requirements change to manage watcher on update, logic would go here.
+    // Example: if oldProject.watchInputDirEnabled was false and updatedProject.watchInputDirEnabled is true, create watcher.
+    // If oldProject.watchInputDirEnabled was true and updatedProject.watchInputDirEnabled is false, delete associated watcher.
+    // This requires finding the specific watcher linked to this project's input dir.
+
     return projects[projectIndex];
   }
 
   async deleteProject(projectId: string): Promise<boolean> {
+    if (projectId === GlobalFileNames.systemProjectId) {
+      console.warn(`Attempted to delete system project (${projectId}). Operation denied.`);
+      vscode.window.showWarningMessage("The Roo+ System project cannot be deleted.");
+      return false;
+    }
     let projects = await this.getProjects();
     const initialLength = projects.length;
     projects = projects.filter(p => p.id !== projectId);
@@ -75,7 +149,7 @@ export class ProjectStorageService {
   // --- Schedule Methods (per project) ---
 
   private getSchedulesKey(projectId: string): string {
-    return `rootasker.project.${projectId}.schedules`;
+    return `rooplus.project.${projectId}.schedules`;
   }
 
   async getSchedulesForProject(projectId: string): Promise<BaseSchedule[]> {
@@ -142,7 +216,7 @@ export class ProjectStorageService {
   // --- Watcher Methods (per project) ---
 
   private getWatchersKey(projectId: string): string {
-    return `rootasker.project.${projectId}.watchers`;
+    return `rooplus.project.${projectId}.watchers`;
   }
 
   async getWatchersForProject(projectId: string): Promise<BaseWatcher[]> {
@@ -163,8 +237,22 @@ export class ProjectStorageService {
 
     const watchers = await this.getWatchersForProject(projectId);
     const now = new Date().toISOString();
+
+    let finalWatcherData = { ...watcherData };
+    if (watcherData.mode && !watcherData.modeDisplayName) {
+      // Attempt to populate modeDisplayName if not provided
+      // This requires CustomModesManager, which isn't directly available here.
+      // For now, we'll rely on the caller (WatcherService or API in extension.ts) to provide it.
+      // If WatcherService needs to do this, it should be done there.
+      // The API command in extension.ts already does this.
+      // Let's assume watcherData from UI should ideally come with modeDisplayName.
+      // As a fallback, we can set it to mode slug.
+      finalWatcherData.modeDisplayName = watcherData.mode; 
+      console.warn(`addWatcherToProject: modeDisplayName not provided for watcher "${watcherData.name}", defaulting to mode slug "${watcherData.mode}".`);
+    }
+
     const newWatcher: BaseWatcher = {
-      ...watcherData,
+      ...finalWatcherData,
       id: vscode.env.machineId + Date.now().toString(), // Simple unique ID
       projectId: projectId,
       createdAt: now,
@@ -196,6 +284,17 @@ export class ProjectStorageService {
     const project = await this.getProject(projectId);
     if (!project) return false;
 
+    if (projectId === GlobalFileNames.systemProjectId) {
+      const watcherToDelete = (await this.getWatchersForProject(projectId)).find(w => w.id === watcherId);
+      // Names of system watchers defined in extension.ts
+      const systemWatcherNames = ["Internal Prompt Improver Watcher", "Internal Prompt Processor Watcher"];
+      if (watcherToDelete && systemWatcherNames.includes(watcherToDelete.name)) {
+        console.warn(`Attempted to delete system watcher "${watcherToDelete.name}" (${watcherId}) from system project. Operation denied.`);
+        vscode.window.showWarningMessage(`System watcher "${watcherToDelete.name}" cannot be deleted.`);
+        return false;
+      }
+    }
+
     let watchers = await this.getWatchersForProject(projectId);
     const initialLength = watchers.length;
     watchers = watchers.filter(w => w.id !== watcherId);
@@ -213,7 +312,7 @@ export class ProjectStorageService {
       return undefined;
     }
 
-    const migrationMarkerKey = `rootasker.migrated.${workspacePath.replace(/[^a-zA-Z0-9]/g, '_')}`;
+    const migrationMarkerKey = `rooplus.migrated.${workspacePath.replace(/[^a-zA-Z0-9]/g, '_')}`;
     const alreadyMigrated = this.context.globalState.get<boolean>(migrationMarkerKey);
 
     if (alreadyMigrated) {
@@ -223,8 +322,8 @@ export class ProjectStorageService {
 
     console.log(`Checking for migration for workspace: ${workspacePath}`);
 
-    const oldSchedulesPath = path.join(workspacePath, '.rootasker', 'schedules.json');
-    const oldWatchersPath = path.join(workspacePath, '.rootasker', 'watchers.json');
+    const oldSchedulesPath = path.join(workspacePath, '.rooplus', 'schedules.json');
+    const oldWatchersPath = path.join(workspacePath, '.rooplus', 'watchers.json');
 
     let oldSchedulesData: { schedules?: any[] } | null = null;
     let oldWatchersData: { watchers?: any[] } | null = null;

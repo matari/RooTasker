@@ -1,13 +1,15 @@
-import React, { useState } from "react"; // Added useState
+import React, { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Watcher } from "./types";
-import { Badge } from "@/components/ui/badge"; // For displaying file types
-import ProjectColorDot from "../projects/ProjectColorDot"; // Import ProjectColorDot
+import { Badge } from "@/components/ui/badge";
+import ProjectColorDot from "../projects/ProjectColorDot";
+import type { Prompt } from "../../../../src/shared/ProjectTypes"; // Import Prompt type
 
 type WatcherListItemProps = {
   watcher: Watcher;
-  projectName?: string; // Added project name
-  projectColor?: string; // Added project color
+  projectName?: string;
+  projectColor?: string;
+  prompts: Prompt[]; // Add prompts to props
   onEdit: (id: string) => void;
   onDelete: (id: string) => void;
   onToggleActive: (id: string, active: boolean | undefined) => void;
@@ -20,6 +22,7 @@ const WatcherListItem: React.FC<WatcherListItemProps> = ({
   watcher,
   projectName, // Added
   projectColor, // Added
+  prompts, // Destructure prompts
   onEdit,
   onDelete,
   onToggleActive,
@@ -40,7 +43,7 @@ const WatcherListItem: React.FC<WatcherListItemProps> = ({
         	<div className="flex justify-between items-center mb-1">
         		<div className="flex items-center min-w-0 flex-grow"> {/* Allow this section to grow and truncate */}
         			{/* ProjectColorDot and projectName removed from here */}
-        			<span className="codicon codicon-eye mr-1.5 text-vscode-descriptionForeground flex-shrink-0" title="Watcher"></span> {/* Changed icon to eye, reduced margin */}
+        			<span className="codicon codicon-eye mr-1.5 flex-shrink-0" title="Watcher"></span> {/* Removed text-vscode-descriptionForeground */}
         			<span className="text-vscode-foreground font-medium text-base truncate" title={watcher.name}>{watcher.name}</span>
         		</div>
         		<div className="flex flex-row gap-1 items-center flex-shrink-0">
@@ -133,7 +136,11 @@ const WatcherListItem: React.FC<WatcherListItemProps> = ({
 
           <div
             className="text-xs text-vscode-descriptionForeground mt-1 italic truncate"
-            title={watcher.prompt}
+            title={
+              watcher.promptSelectionType === 'saved' && watcher.savedPromptId
+                ? prompts.find(p => p.id === watcher.savedPromptId)?.title || 'Saved Prompt (not found)'
+                : watcher.prompt
+            }
             style={{
                 overflow: "hidden",
                 display: "-webkit-box",
@@ -141,7 +148,10 @@ const WatcherListItem: React.FC<WatcherListItemProps> = ({
                 WebkitBoxOrient: "vertical",
             }}
           >
-            Prompt: {watcher.prompt}
+            Prompt: {watcher.promptSelectionType === 'saved' && watcher.savedPromptId
+              ? (prompts.find(p => p.id === watcher.savedPromptId)?.title || `Saved ID: ${watcher.savedPromptId.substring(0,8)}...`)
+              : watcher.prompt || "Not set"
+            }
           </div>
 
           {watcher.lastTriggeredTime && (

@@ -1,5 +1,6 @@
 import React from 'react';
 import { useExtensionState } from '../../context/ExtensionStateContext';
+import { Button } from '../ui/button'; // Moved Button import
 
 type ExampleItem = {
   icon?: string; // Codicon class
@@ -7,11 +8,13 @@ type ExampleItem = {
 };
 
 type SplashPageProps = {
-  tabType: 'schedules' | 'watchers' | 'projects' | 'generic';
+  tabType: 'schedules' | 'watchers' | 'projects' | 'prompts' | 'generic';
   title?: string;
   description?: string;
   examples?: ExampleItem[];
   featureIcon?: string; // Codicon class for the main feature icon
+  showCreateProjectHelper?: boolean;
+  onCreateProject?: () => void;
 };
 
 const SplashPage: React.FC<SplashPageProps> = ({
@@ -20,8 +23,10 @@ const SplashPage: React.FC<SplashPageProps> = ({
   description,
   examples,
   featureIcon,
+  showCreateProjectHelper = false,
+  onCreateProject,
 }) => {
-	const { rootaskerLiteSvgUri, rootaskerDarkSvgUri } = useExtensionState();
+	const { rootaskerLiteSvgUri: rooPlusLiteSvgUri, rootaskerDarkSvgUri: rooPlusDarkSvgUri } = useExtensionState(); // Renamed for clarity
 
 	interface SplashPageDefaultContentEntry {
 		title: string;
@@ -30,9 +35,9 @@ const SplashPage: React.FC<SplashPageProps> = ({
 		examples: ExampleItem[];
 	}
 
-	const defaultContent: Record<'schedules' | 'watchers' | 'projects' | 'generic', SplashPageDefaultContentEntry> = {
+	const defaultContent: Record<'schedules' | 'watchers' | 'projects' | 'prompts' | 'generic', SplashPageDefaultContentEntry> = {
 		generic: {
-			title: "Welcome to RooTasker!",
+			title: "Welcome to Roo+!",
 			description: "Your advanced task automation assistant.",
 			featureIcon: "codicon-rocket",
 			examples: [{ text: "Loading your workspace..." }] // This is valid for ExampleItem[] as icon is optional
@@ -68,6 +73,17 @@ const SplashPage: React.FC<SplashPageProps> = ({
 				{ icon: "codicon-megaphone", text: "Non-Fiction Podcast: Manage episode research, watch audio edit folders, schedule publishing tasks." },
 			],
 		},
+		prompts: {
+			title: "No Prompts Yet",
+			description: "Create and manage reusable prompts for Roo Code. Use them for common tasks, code generation, reviews, and more.",
+			featureIcon: "codicon-comment-discussion", // Or a more specific icon like 'codicon-lightbulb'
+			examples: [
+				{ icon: "codicon-code", text: "Generate boilerplate code for a new React component." },
+				{ icon: "codicon-search", text: "Review the current file for potential bugs." },
+				{ icon: "codicon-book", text: "Create documentation for a selected function." },
+				{ icon: "codicon-beaker", text: "Write unit tests for the selected class." },
+			],
+		},
 	};
 
 	const currentTitle = title || defaultContent[tabType].title;
@@ -77,13 +93,13 @@ const SplashPage: React.FC<SplashPageProps> = ({
 
 	return (
 		<div className="flex flex-col items-center justify-start h-full text-center p-8 pt-20 text-vscode-editor-foreground"> {/* Changed justify-center to justify-start and added pt-20 */}
-			{rootaskerLiteSvgUri && rootaskerDarkSvgUri && (
-				<picture className="mb-2"> {/* Moved RooTasker logo up by reducing bottom margin */}
-					<source srcSet={rootaskerDarkSvgUri} media="(prefers-color-scheme: dark)" />
-          <source srcSet={rootaskerLiteSvgUri} media="(prefers-color-scheme: light)" />
+			{rooPlusLiteSvgUri && rooPlusDarkSvgUri && (
+				<picture className="mb-2"> {/* Moved Roo+ logo up by reducing bottom margin */}
+					<source srcSet={rooPlusDarkSvgUri} media="(prefers-color-scheme: dark)" />
+          <source srcSet={rooPlusLiteSvgUri} media="(prefers-color-scheme: light)" />
           <img
-            src={rootaskerLiteSvgUri}
-            alt="RooTasker Logo"
+            src={rooPlusLiteSvgUri}
+            alt="Roo+ Logo"
             className="w-24 h-24" // Made logo smaller (150px to 96px approx)
           />
         </picture>
@@ -95,6 +111,19 @@ const SplashPage: React.FC<SplashPageProps> = ({
       <p className="text-md text-vscode-descriptionForeground mb-6 max-w-md">
         {currentDescription}
       </p>
+
+      {showCreateProjectHelper && (tabType === 'schedules' || tabType === 'watchers') && (
+        <div className="mb-6 p-4 border border-vscode-textSeparator-foreground rounded-md bg-vscode-editorWidget-background max-w-md">
+          <p className="text-sm text-vscode-descriptionForeground mb-2">
+            {tabType === 'schedules' ? 'Schedules' : 'Watchers'} are organized within projects.
+            You don't have any projects yet.
+          </p>
+          <Button onClick={onCreateProject} size="sm">
+            <span className="codicon codicon-add mr-1"></span>
+            Create Your First Project
+          </Button>
+        </div>
+      )}
 
       {currentExamples && currentExamples.length > 0 && (
         <div className="mt-4 text-left max-w-lg w-full">

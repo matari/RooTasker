@@ -1,6 +1,7 @@
-import React from 'react';
+import React, { useState, useMemo } from 'react'; // Added useState and useMemo
 import { useExtensionState } from '../../context/ExtensionStateContext';
 import { Button } from '../ui/button';
+import FilterInput from '../common/FilterInput'; // Added FilterInput import
 import type { Project } from '../../../../src/shared/ProjectTypes';
 import ProjectCard from './ProjectCard'; // Uncommented
 import ProjectForm from './ProjectForm'; // Uncommented
@@ -23,6 +24,17 @@ const ProjectsView: React.FC<ProjectsViewProps> = ({
   const { projects, projectSchedules, projectWatchers, activeProjectId, setActiveProjectId } = useExtensionState();
   // showProjectForm is now controlled by App.tsx for "new", but editingProject still triggers form locally
   const [editingProject, setEditingProject] = React.useState<Project | null>(null);
+  const [filterText, setFilterText] = useState(''); // Added filter text state
+
+  const filteredProjects = useMemo(() => {
+    if (!projects) return [];
+    if (!filterText.trim()) return projects;
+    const lowerFilterText = filterText.toLowerCase();
+    return projects.filter(project => 
+      project.name.toLowerCase().includes(lowerFilterText) ||
+      (project.description && project.description.toLowerCase().includes(lowerFilterText))
+    );
+  }, [projects, filterText]);
 
   const handleSaveProject = (data: Omit<Project, 'id' | 'createdAt' | 'updatedAt'> | Project) => {
     if ('id' in data) { // Editing existing project
@@ -51,11 +63,8 @@ const ProjectsView: React.FC<ProjectsViewProps> = ({
   	// Also send message to backend if backend needs to know the active project
   	vscode.postMessage({ type: 'setActiveProject', projectId: newProjectId === null ? undefined : newProjectId });
  
-  	// If a project is being activated (not deactivated) and it's different from the current one,
-  	// navigate to the 'watchers' tab.
-  	if (newProjectId !== null && newProjectId !== currentActiveId) {
-  		onNavigateToTab('watchers');
-  	}
+  	// Navigation to watchers tab upon project activation has been removed.
+    // Navigation should be explicit via "Add Watcher/Schedule" or item clicks.
   };
  
   const handleAddScheduleToProject = (projectId: string) => {
@@ -122,11 +131,12 @@ const ProjectsView: React.FC<ProjectsViewProps> = ({
 
   return (
     <div className="h-full flex flex-col p-4 space-y-4">
-      {/* Header with title is removed, button is moved to App.tsx header */}
-      {/* <div className="flex justify-between items-center">
-        <h2 className="text-xl font-semibold text-vscode-editor-foreground">Projects</h2>
-      </div> */}
-
+      <FilterInput
+        value={filterText}
+        onValueChange={setFilterText}
+        placeholder="Filter projects by name or description..."
+        // className="mb-0" // Removed mb-0 to allow parent's space-y-4 to apply
+      />
       <ProjectForm
         isOpen={isNewProjectModalOpen || !!editingProject} // Open if new modal is triggered OR if editing
         onClose={() => {
@@ -148,9 +158,9 @@ const ProjectsView: React.FC<ProjectsViewProps> = ({
    
       {/* Container for the list of project cards. Added p-1 for overall padding. */}
       <div className="flex-grow overflow-auto space-y-3 p-1">
-        {projects.map((project) => {
-          const schedulesForProject = projectSchedules[project.id] || [];
-          const watchersForProject = projectWatchers[project.id] || [];
+        {filteredProjects.map((project) => {
+          const schedulesForProject = projectSchedules && projectSchedules[project.id] ? projectSchedules[project.id] : [];
+          const watchersForProject = projectWatchers && projectWatchers[project.id] ? projectWatchers[project.id] : [];
           return (
             <ProjectCard
               key={project.id}

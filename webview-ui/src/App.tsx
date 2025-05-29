@@ -62,6 +62,15 @@ const App = () => {
 	// Tell the extension that we are ready to receive messages.
 	useEffect(() => vscode.postMessage({ type: "webviewDidLaunch" }), [])
 
+	// Listen for navigation requests from child components (e.g., SplashPage)
+	useEvent("message", (event: MessageEvent) => {
+		const message: ExtensionMessage = event.data;
+		if (message.type === "navigateToNewProjectForm") {
+			handleNavigateToTab("projects");
+			handleToggleNewProjectModal();
+		}
+	});
+
 	if (!didHydrateState) {
 		return <SplashPage tabType="generic" />; // Show SplashPage while hydrating
 	}
@@ -116,22 +125,22 @@ const App = () => {
 					{/* Action buttons on the right */}
 					<div className="flex items-center gap-2">
 						{activeMainTab === 'projects' && (
-							<Button size="sm" variant="ghost" onClick={handleToggleNewProjectModal} title="New Project">
+							<Button size="sm" variant="ghost" onClick={handleToggleNewProjectModal} title="New Project" className="text-[--vscode-button-foreground] hover:text-[--vscode-button-hoverBackground] hover:bg-transparent">
 								<span className="codicon codicon-add"></span>
 							</Button>
 						)}
 						{activeMainTab === 'scheduler' && (
-							<Button size="sm" variant="ghost" onClick={() => handleNavigateToTab('scheduler', { view: 'form' })} title="New Task">
+							<Button size="sm" variant="ghost" onClick={() => handleNavigateToTab('scheduler', { view: 'form' })} title="New Task" className="text-[--vscode-button-foreground] hover:text-[--vscode-button-hoverBackground] hover:bg-transparent">
 								<span className="codicon codicon-add"></span>
 							</Button>
 						)}
 						{activeMainTab === 'watchers' && (
-							<Button size="sm" variant="ghost" onClick={() => handleNavigateToTab('watchers', { view: 'form' })} title="New Watcher">
+							<Button size="sm" variant="ghost" onClick={() => handleNavigateToTab('watchers', { view: 'form' })} title="New Watcher" className="text-[--vscode-button-foreground] hover:text-[--vscode-button-hoverBackground] hover:bg-transparent">
 								<span className="codicon codicon-add"></span>
 							</Button>
 						)}
 						{activeMainTab === 'prompts' && (
-							<Button size="sm" variant="ghost" onClick={() => handleNavigateToTab('prompts', { view: 'form' })} title="New Prompt">
+							<Button size="sm" variant="ghost" onClick={() => handleNavigateToTab('prompts', { view: 'form' })} title="New Prompt" className="text-[--vscode-button-foreground] hover:text-[--vscode-button-hoverBackground] hover:bg-transparent">
 								<span className="codicon codicon-add"></span>
 							</Button>
 						)}

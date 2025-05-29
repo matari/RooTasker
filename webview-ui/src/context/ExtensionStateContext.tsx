@@ -235,6 +235,36 @@ export const ExtensionStateContextProvider: React.FC<{ children: React.ReactNode
 						setState(prevState => ({ ...prevState, prompts: message.payload as Prompt[] }));
 					}
 					break;
+				case "setProjects": // Handle projects update from backend
+					if (message.payload && Array.isArray(message.payload)) {
+						setState(prevState => ({ 
+							...prevState, 
+							projects: message.payload as Project[],
+							// Potentially reset or update projectSchedules/Watchers if they are not part of this specific message
+							// However, the main "state" message should handle their consistency with projects.
+						}));
+					}
+					break;
+				case "setEditingPromptWithContent": { // Added to handle full prompt data for editing
+					if (message.payload) {
+						// This message is specifically for PromptsView to update its form data
+						// It's not a general state update, so we don't merge into main `state`.
+						// PromptsView will need to listen for this message type directly if this approach is taken,
+						// OR this needs to update a specific part of the context state that PromptsView consumes.
+						// For now, let's assume PromptsView has a way to get this or it updates a specific context field.
+						// Let's try updating a specific field in context if PromptsView is designed to use it.
+						// However, `currentPromptData` is local to PromptsView.
+						// A better way: PromptsView listens for this.
+						// For now, this handler in context won't do anything directly to PromptsView's local state.
+						// PromptsView's handleEditPrompt initiated the request; it should handle the response.
+						// This message type in ExtensionMessage.ts is for the extension to *send* to webview.
+						// The webview's top-level message listener (e.g., in App.tsx or specific view) should catch it.
+						// Let's assume PromptsView will handle this via its own useEvent listener.
+						// So, no direct state change here in the main context handler.
+						// The message is defined, webviewMessageHandler sends it, PromptsView needs to catch it.
+					}
+					break;
+				}
 			}
 		},
 		[setListApiConfigMeta],
@@ -243,7 +273,8 @@ export const ExtensionStateContextProvider: React.FC<{ children: React.ReactNode
 	// Fetch initial prompts when component mounts after hydration
 	useEffect(() => {
 		if (didHydrateState) {
-			vscode.postMessage({ type: "getPrompts" });
+			// vscode.postMessage({ type: "getProjects" }); // Projects are now part of the main 'state' message
+			vscode.postMessage({ type: "getPrompts" });  // Request prompts
 		}
 	}, [didHydrateState]);
 

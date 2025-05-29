@@ -152,6 +152,12 @@ export interface WebviewMessage {
 		| "runPromptNow" // Added for Prompts: Run Now feature
 		| "deletePrompt" // Added for Prompts: Delete feature
 		| "promptsUpdated" // Added for Prompts: Notify webview of updates
+		| "navigateToNewProjectForm" // Added for SplashPage to request new project form
+		| "updatePromptMetadata" // For saving only metadata from PromptForm
+		| "createPromptWithMetadata" // For creating a new prompt (metadata only, content file to be created)
+		| "openPromptContentFile" // Request to open the prompt's content file
+		| "requestPromptImprovement" // Request to start the prompt improvement workflow
+		| "getPromptContent" // Request for full content of a specific prompt
 		// REMOVED Recorder specific messages: "openRecorderPanel", "getNgrokUrl", "getRecordingsForProject", "playRecording", "renameRecording", "deleteRecording"
 		| "openExternalUrl" // General utility
 	text?: string

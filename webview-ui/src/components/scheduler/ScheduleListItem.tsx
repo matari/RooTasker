@@ -87,7 +87,7 @@ const ScheduleListItem: React.FC<ScheduleListItemProps> = ({
           <div className="flex justify-between items-center mb-1">
           	<div className="flex items-center min-w-0 flex-grow"> {/* Allow this section to grow and truncate */}
           		{/* ProjectColorDot and projectName removed from here */}
-          		<span className={`codicon ${getScheduleIcon(schedule)} mr-1.5 text-vscode-descriptionForeground flex-shrink-0`} title={`Type: ${schedule.scheduleKind}`}></span>
+          		<span className={`codicon ${getScheduleIcon(schedule)} mr-1.5 flex-shrink-0`} title={`Type: ${schedule.scheduleKind}`}></span> {/* Removed text-vscode-descriptionForeground */}
           		<span className="text-vscode-foreground font-medium text-base truncate" title={schedule.name}>{schedule.name}</span>
           	</div>
           	<div className="flex flex-row gap-1 items-center flex-shrink-0">

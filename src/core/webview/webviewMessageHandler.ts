@@ -42,7 +42,7 @@ export const webviewMessageHandler = async (provider: any, message: WebviewMessa
 				const workspaceRoot = getWorkspacePath();
 				if (workspaceRoot) {
 					// Resolve the full path to schedules.json
-					const schedulesFilePath = path.join(workspaceRoot, ".rootasker", "schedules.json"); // Updated path
+					const schedulesFilePath = path.join(workspaceRoot, ".rooplus", "schedules.json"); // Updated path
 					
 					try {
 						// Read the current schedules file content
@@ -53,7 +53,7 @@ export const webviewMessageHandler = async (provider: any, message: WebviewMessa
 							// Post the content back to the webview
 							provider.postMessageToWebview({
 								type: "fileContent",
-								path: "./.rootasker/schedules.json", // Updated path
+								path: "./.rooplus/schedules.json", // Updated path
 								content: fileContent
 							});
 						}
@@ -321,7 +321,7 @@ export const webviewMessageHandler = async (provider: any, message: WebviewMessa
 			break
 		case "openFile":
 			// Special handling for schedules.json and watchers.json files
-			if (message.text === "./.rootasker/schedules.json" || message.text === "./.rootasker/watchers.json") {
+			if (message.text === "./.rooplus/schedules.json" || message.text === "./.rooplus/watchers.json") {
 				try {
 					// Get workspace root
 					const workspaceRoot = getWorkspacePath()
@@ -335,9 +335,9 @@ export const webviewMessageHandler = async (provider: any, message: WebviewMessa
 					
 					// If this is a write operation (has content)
 					if (message.values?.content) {
-						// Ensure the .rootasker directory exists
-						const rooTaskerDir = path.join(workspaceRoot, ".rootasker")
-						await vscode.workspace.fs.createDirectory(vscode.Uri.file(rooTaskerDir))
+						// Ensure the .rooplus directory exists
+						const rooPlusDir = path.join(workspaceRoot, ".rooplus")
+						await vscode.workspace.fs.createDirectory(vscode.Uri.file(rooPlusDir))
 						
 						// Write the file content
 						console.log(`Writing to schedules.json: ${message.values.content}`)
@@ -381,7 +381,7 @@ export const webviewMessageHandler = async (provider: any, message: WebviewMessa
 								// Send the content back to the webview
 								provider.postMessageToWebview({
 									type: "fileContent",
-									path: message.text, // e.g., "./.rootasker/schedules.json"
+									path: message.text, // e.g., "./.rooplus/schedules.json"
 									content: fileContent
 								})
 							} else {
@@ -1018,36 +1018,47 @@ case "humanRelayCancel":
 	}
 	break;
 		// Watcher messages
-		case "addWatcher": {
-			if (message.data) {
+		case "addWatcherToProject": // This case name should match WebviewMessage.ts
+			if (message.projectId && message.data) { // Ensure projectId is present
 				const watcherService = WatcherService.getInstance(provider.contextProxy.extensionContext);
-				await watcherService.addWatcher(message.data as Omit<Watcher, 'id' | 'createdAt' | 'updatedAt'>);
-				// Optionally, notify webview that watchers are updated
-				provider.postMessageToWebview({ type: "watchersUpdated" });
+				const { projectId: dataProjectId, ...watcherDataRest } = message.data as any; // Cast to any to destructure, then use typed for service
+				await watcherService.addWatcher(
+					message.projectId,
+					watcherDataRest as Omit<BaseWatcher, 'id' | 'projectId' | 'createdAt' | 'updatedAt'>
+				);
+                await provider.postStateToWebview(); // Directly refresh webview state
+			} else {
+				console.error("addWatcherToProject: projectId or data is missing in message.");
 			}
 			break;
-		}
-		case "updateWatcher": {
-			if (message.watcherId && message.data) {
+		case "updateWatcherInProject": // This case name should match WebviewMessage.ts
+			provider.log(`webviewMessageHandler: Received 'updateWatcherInProject'. ProjectID: ${message.projectId}, WatcherID: ${message.watcherId}, Data: ${JSON.stringify(message.data)}`);
+			if (message.projectId && message.watcherId && message.data) {
 				const watcherService = WatcherService.getInstance(provider.contextProxy.extensionContext);
-				await watcherService.updateWatcher(message.watcherId, message.data as Partial<Omit<Watcher, 'id' | 'createdAt'>>);
-				provider.postMessageToWebview({ type: "watchersUpdated" });
+                const { projectId: dataProjectId, ...watcherUpdatesRest } = message.data as any; // Exclude projectId from updates
+				await watcherService.updateWatcher(
+					message.watcherId,
+					watcherUpdatesRest as Partial<Omit<BaseWatcher, 'id' | 'createdAt' | 'projectId'>>,
+					message.projectId
+				);
+                await provider.postStateToWebview(); // Directly refresh webview state
+			} else {
+				provider.log(`webviewMessageHandler: 'updateWatcherInProject' message received but missing projectId, watcherId, or data.`);
 			}
 			break;
-		}
 		case "deleteWatcher": {
 			if (message.watcherId) {
 				const watcherService = WatcherService.getInstance(provider.contextProxy.extensionContext);
-				await watcherService.deleteWatcher(message.watcherId);
-				provider.postMessageToWebview({ type: "watchersUpdated" });
+				await watcherService.deleteWatcher(message.watcherId, message.projectId);
+                await provider.postStateToWebview(); // Directly refresh webview state
 			}
 			break;
 		}
 		case "toggleWatcherActive": {
 			if (message.watcherId && typeof message.active === "boolean") {
 				const watcherService = WatcherService.getInstance(provider.contextProxy.extensionContext);
-				await watcherService.toggleWatcherActive(message.watcherId, message.active);
-				provider.postMessageToWebview({ type: "watchersUpdated" });
+				await watcherService.toggleWatcherActive(message.watcherId, message.active, message.projectId);
+                await provider.postStateToWebview(); // Directly refresh webview state
 			}
 			break;
 		}
@@ -1055,8 +1066,8 @@ case "humanRelayCancel":
 			if (message.watcherId) {
 				try {
 					const watcherService = WatcherService.getInstance(provider.contextProxy.extensionContext);
-					await watcherService.duplicateWatcher(message.watcherId);
-					provider.postMessageToWebview({ type: "watchersUpdated" });
+					await watcherService.duplicateWatcher(message.watcherId, message.projectId);
+                    await provider.postStateToWebview(); // Directly refresh webview state
 					provider.log(`Successfully duplicated watcher ID: ${message.watcherId}`);
 				} catch (error) {
 					provider.log(`Error duplicating watcher: ${error instanceof Error ? error.message : String(error)}`);
@@ -1084,25 +1095,9 @@ case "humanRelayCancel":
 			}
 			break;
 		}
-		case "watchersUpdated": { // Handle request to reload watchers, similar to schedules
-			try {
-				const watcherService = WatcherService.getInstance(provider.contextProxy.extensionContext);
-				// await watcherService.loadWatchers(); // Assuming WatcherService has a way to reload/refresh its internal list if needed
-				// For now, just re-request the file content to update UI
-				const workspaceRoot = getWorkspacePath();
-				if (workspaceRoot) {
-					const watchersFilePath = path.join(workspaceRoot, ".rootasker", "watchers.json");
-					const fileExists = await fileExistsAtPath(watchersFilePath);
-					if (fileExists) {
-						const fileContent = await fs.readFile(watchersFilePath, 'utf-8');
-						provider.postMessageToWebview({ type: "fileContent", path: "./.rootasker/watchers.json", content: fileContent });
-					} else {
-						provider.postMessageToWebview({ type: "fileContent", path: "./.rootasker/watchers.json", content: JSON.stringify({ watchers: [] }) });
-					}
-				}
-			} catch (error) {
-				console.log("Failed to reload watchers in extension:", error);
-			}
+		case "watchersUpdated": {
+			provider.log("watchersUpdated message received, posting full state to webview.");
+			await provider.postStateToWebview(); // This will send all necessary state, including updated watchers
 			break;
 		}
 		// Project CRUD operations
@@ -1152,24 +1147,24 @@ case "humanRelayCancel":
 				await provider.postStateToWebview();
 			}
 			break;
-		case "addWatcherToProject":
-			if (message.projectId && message.data) {
-				await provider.projectStorageService.addWatcherToProject(message.projectId, message.data as Omit<BaseWatcher, 'id' | 'projectId' | 'createdAt' | 'updatedAt'>);
-				await provider.postStateToWebview();
-			}
-			break;
-		case "updateWatcherInProject":
-			if (message.projectId && message.data) {
-				await provider.projectStorageService.updateWatcherInProject(message.projectId, message.data as BaseWatcher);
-				await provider.postStateToWebview();
-			}
-			break;
-		case "deleteWatcherFromProject":
-			if (message.projectId && message.watcherId) {
-				await provider.projectStorageService.deleteWatcherFromProject(message.projectId, message.watcherId);
-				await provider.postStateToWebview();
-			}
-			break;
+		// case "addWatcherToProject": // This seems to be a duplicate, the one above is more specific to WatcherService
+		// 	if (message.projectId && message.data) {
+		// 		await provider.projectStorageService.addWatcherToProject(message.projectId, message.data as Omit<BaseWatcher, 'id' | 'projectId' | 'createdAt' | 'updatedAt'>);
+		// 		await provider.postStateToWebview();
+		// 	}
+		// 	break;
+		// case "updateWatcherInProject": // This seems to be a duplicate
+		// 	if (message.projectId && message.data) {
+		// 		await provider.projectStorageService.updateWatcherInProject(message.projectId, message.data as BaseWatcher);
+		// 		await provider.postStateToWebview();
+		// 	}
+		// 	break;
+		// case "deleteWatcherFromProject": // Covered by 'deleteWatcher' which calls WatcherService
+		// 	if (message.projectId && message.watcherId) {
+		// 		await provider.projectStorageService.deleteWatcherFromProject(message.projectId, message.watcherId);
+		// 		await provider.postStateToWebview();
+		// 	}
+		// 	break;
 		case "selectProjectDirectory":
 			try {
 				const options: vscode.OpenDialogOptions = {
@@ -1207,8 +1202,16 @@ case "humanRelayCancel":
 					const { PromptStorageService } = await import('../storage/PromptStorageService');
 					provider.promptStorageService = new PromptStorageService(provider.context);
 				}
-				const prompts = await provider.promptStorageService.getPrompts();
-				await provider.postMessageToWebview({ type: 'setPrompts', payload: prompts });
+				const promptsMetadata = await provider.promptStorageService.getPromptsMetadata();
+				const fullPrompts = [];
+				for (const meta of promptsMetadata) {
+					// getPrompt now correctly fetches content
+					const fullPrompt = await provider.promptStorageService.getPrompt(meta.id);
+					if (fullPrompt) {
+						fullPrompts.push(fullPrompt);
+					}
+				}
+				await provider.postMessageToWebview({ type: 'setPrompts', payload: fullPrompts });
 			} catch (error) {
 				console.error('Error fetching prompts for webview:', error);
 				await provider.postMessageToWebview({ type: 'setPrompts', payload: [], error: 'Failed to load prompts' });
@@ -1229,78 +1232,166 @@ case "humanRelayCancel":
 			}
 			break;
 		}
+		// The 'savePromptAndOpenFile' is now split into metadata saving and file opening.
+		// 'savePromptAndOpenFile' might be deprecated or repurposed if all edits happen via direct file.
+		// For now, let's comment it out and rely on the new messages.
+		/*
 		case "savePromptAndOpenFile": {
-			const payload = message.payload as any; // Cast to any for now, should be SavePromptPayload
-			if (payload && payload.title) { // This is for savePromptAndOpenFile
+			// ... old logic ...
+			break;
+		}
+		*/
+		case "createPromptWithMetadata": {
+			const payload = message.payload as any;
+			if (payload && payload.title && payload.content !== undefined) {
 				try {
-					// 1. Initialize prompt storage service if needed
 					if (!provider.promptStorageService) {
 						const { PromptStorageService } = await import('../storage/PromptStorageService');
 						provider.promptStorageService = new PromptStorageService(provider.context);
 					}
-					
-					let promptResult;
-					
-					// Check if we're updating an existing prompt or creating a new one
-					if (payload.promptId) {
-						// Update existing prompt
-						const updates = {
-							title: payload.title,
-							content: payload.content || '',
-							tags: payload.tags || []
-						};
-						promptResult = await provider.promptStorageService.updatePrompt(payload.promptId, updates);
-						if (!promptResult) {
-							throw new Error(`Prompt with ID ${payload.promptId} not found`);
-						}
-						provider.log(`Updated prompt ID: ${payload.promptId}`);
-					} else {
-						// Create new prompt
-						const promptMetaData = {
-							title: payload.title,
-							content: payload.content || '',
-							tags: payload.tags || []
-						};
-						promptResult = await provider.promptStorageService.addPrompt(promptMetaData);
-						provider.log(`Created new prompt ID: ${promptResult.id}`);
-					}
-
-					// 2. Construct content with frontmatter
-					let fileContent = '---\n';
-					fileContent += `title: ${promptResult.title}\n`;
-					if (payload.description) {
-						fileContent += `description: ${payload.description}\n`;
-					}
-					if (promptResult.tags && promptResult.tags.length > 0) {
-						fileContent += `tags: [${promptResult.tags.join(', ')}]\n`;
-					}
-					fileContent += `promptId: ${promptResult.id}\n`;
-					fileContent += `---\n\n`;
-					fileContent += promptResult.content || `<!-- Enter your prompt content below this line -->\n`;
-					
-					// 3. Create and open a named temporary file
-					const sanitizedTitle = payload.title.replace(/[<>:"/\\|?*]+/g, '_').replace(/\s+/g, '_').slice(0, 50);
-					const tempDir = vscode.Uri.joinPath(provider.context.globalStorageUri, 'temp_prompts');
-					await vscode.workspace.fs.createDirectory(tempDir); // Ensure directory exists
-					const tempFilePath = vscode.Uri.joinPath(tempDir, `${sanitizedTitle || 'Untitled_Prompt'}_${promptResult.id.slice(0,8)}.md`);
-					
-					await vscode.workspace.fs.writeFile(tempFilePath, Buffer.from(fileContent, 'utf8'));
-					
-					const doc = await vscode.workspace.openTextDocument(tempFilePath);
-					await vscode.window.showTextDocument(doc);
-					
-					provider.log(`Opened temporary prompt file: ${tempFilePath.fsPath} for prompt ID: ${promptResult.id}`);
-
-					// 4. TODO: Store mapping of tempFilePath.toString() to promptResult.id
-					//    And listen for save/close events on this document.
-					//    This part is more complex and involves workspace event listeners.
-
-					// Notify webview that prompts might have been updated (e.g., to refresh list)
+					// The new addPrompt expects content, title, description, tags
+					const promptDataForAdd = {
+						title: payload.title,
+						description: payload.description || '',
+						content: payload.content, // Assuming form sends this, even if empty
+						tags: payload.tags || []
+					};
+					const newPrompt = await provider.promptStorageService.addPrompt(promptDataForAdd);
+					provider.log(`Created new prompt with metadata: ${newPrompt.id}`);
 					await provider.postMessageToWebview({ type: 'promptsUpdated' });
+					// Optionally, immediately open the content file for the new prompt
+					// provider.postMessageToWebview({ type: 'openPromptContentFile', payload: { promptId: newPrompt.id } });
+				} catch (error) {
+					console.error('Error in createPromptWithMetadata:', error);
+					vscode.window.showErrorMessage(`Failed to create prompt: ${error instanceof Error ? error.message : String(error)}`);
+				}
+			}
+			break;
+		}
+		case "updatePromptMetadata": {
+			const payload = message.payload as any;
+			if (payload && payload.promptId) {
+				try {
+					if (!provider.promptStorageService) {
+						const { PromptStorageService } = await import('../storage/PromptStorageService');
+						provider.promptStorageService = new PromptStorageService(provider.context);
+					}
+					// updatePrompt expects content to be part of updates if it changed.
+					// If content is managed purely by file saves, this only updates metadata.
+					// The PromptForm sends all its data, including content.
+					const updatesForStorage = {
+						title: payload.title,
+						description: payload.description,
+						tags: payload.tags,
+						content: payload.content, // Pass content along
+						// isArchived is not part of PromptFormData directly from form, handle separately if needed
+					};
+					await provider.promptStorageService.updatePrompt(payload.promptId, updatesForStorage);
+					provider.log(`Updated prompt metadata for ID: ${payload.promptId}`);
+					await provider.postMessageToWebview({ type: 'promptsUpdated' });
+				} catch (error) {
+					console.error('Error in updatePromptMetadata:', error);
+					vscode.window.showErrorMessage(`Failed to update prompt metadata: ${error instanceof Error ? error.message : String(error)}`);
+				}
+			}
+			break;
+		}
+		case "openPromptContentFile": {
+			const payload = message.payload as any;
+			if (payload && payload.promptId) {
+				try {
+					if (!provider.promptStorageService) {
+						const { PromptStorageService } = await import('../storage/PromptStorageService');
+						provider.promptStorageService = new PromptStorageService(provider.context);
+					}
+					const promptMetadata = await provider.promptStorageService.getPrompt(payload.promptId); // getPrompt now returns full prompt
+					if (promptMetadata && promptMetadata.filePath) {
+						const promptsDir = await provider.promptStorageService.getPromptsDirPath(); // Need to make this public or get path differently
+						const fullPath = path.join(promptsDir, promptMetadata.filePath);
+						
+						// Ensure file exists before trying to open, create if not (e.g. for a brand new prompt)
+						const fileExists = await fileExistsAtPath(fullPath);
+						if (!fileExists) {
+							await fs.writeFile(fullPath, promptMetadata.content || '', 'utf-8'); // Write empty or existing content
+						}
+
+						const doc = await vscode.workspace.openTextDocument(fullPath);
+						await vscode.window.showTextDocument(doc);
+						provider.log(`Opened prompt content file: ${fullPath}`);
+					} else {
+						vscode.window.showErrorMessage(`Could not find prompt or its file path for ID: ${payload.promptId}`);
+					}
+				} catch (error) {
+					console.error('Error in openPromptContentFile:', error);
+					vscode.window.showErrorMessage(`Failed to open prompt content file: ${error instanceof Error ? error.message : String(error)}`);
+				}
+			}
+			break;
+		}
+		case "getPromptContent": {
+			const payload = message.payload as any;
+			if (payload && payload.promptId) {
+				try {
+					if (!provider.promptStorageService) {
+						const { PromptStorageService } = await import('../storage/PromptStorageService');
+						provider.promptStorageService = new PromptStorageService(provider.context);
+					}
+					const prompt = await provider.promptStorageService.getPrompt(payload.promptId);
+					if (prompt) {
+						// Send the full prompt (metadata + content) back to the webview
+						await provider.postMessageToWebview({ type: 'setEditingPromptWithContent', payload: prompt });
+					} else {
+						vscode.window.showErrorMessage(`Prompt not found: ${payload.promptId}`);
+					}
+				} catch (error) {
+					console.error('Error in getPromptContent:', error);
+					vscode.window.showErrorMessage(`Failed to get prompt content: ${error instanceof Error ? error.message : String(error)}`);
+				}
+			}
+			break;
+		}
+		case "requestPromptImprovement": {
+			const payload = message.payload as any; // Should be { promptId: string }
+			if (payload && payload.promptId) {
+				const promptId = payload.promptId;
+				provider.log(`Request for prompt improvement received for ID: ${promptId}.`);
+				try {
+					if (!provider.promptStorageService) {
+						const { PromptStorageService } = await import('../storage/PromptStorageService');
+						provider.promptStorageService = new PromptStorageService(provider.context);
+					}
+					const promptToImprove = await provider.promptStorageService.getPrompt(promptId);
+					if (!promptToImprove || !promptToImprove.content || !promptToImprove.filePath) {
+						vscode.window.showErrorMessage(`Prompt ${promptId} not found or has no content/filePath.`);
+						return;
+					}
+
+					const { GlobalFileNames } = await import('../../shared/globalFileNames');
+					const globalStoragePath = provider.context.globalStorageUri.fsPath;
+					const promptsDir = await provider.promptStorageService.getPromptsDirPath();
+					const originalContentPath = path.join(promptsDir, promptToImprove.filePath);
+
+					// 1. Backup original file
+					const backupFileName = `${promptToImprove.filePath.replace(/\.md$/, '')}_backup_${Date.now()}.md`;
+					const backupPath = path.join(promptsDir, backupFileName);
+					await fs.copyFile(originalContentPath, backupPath);
+					provider.log(`Backed up prompt content to: ${backupPath}`);
+
+					// 2. Create pending file for improvement
+					const pendingDir = path.join(globalStoragePath, GlobalFileNames.systemPipelineDirName, GlobalFileNames.promptImprovementDirName, GlobalFileNames.promptImprovementPendingDirName);
+					await fs.mkdir(pendingDir, { recursive: true });
+					
+					// Filename for pending/processed should allow tracing back: [promptId]_v[currentVersion].improve.md
+					const pendingFileName = `${promptId}_v${promptToImprove.currentVersion}.improve.md`;
+					const pendingFilePath = path.join(pendingDir, pendingFileName);
+					
+					await fs.writeFile(pendingFilePath, promptToImprove.content, 'utf-8');
+					provider.log(`Created pending file for improvement: ${pendingFilePath}`);
+					vscode.window.showInformationMessage(`Prompt "${promptToImprove.title}" sent for improvement. You'll be notified when it's ready.`);
 
 				} catch (error) {
-					console.error('Error in savePromptAndOpenFile:', error);
-					vscode.window.showErrorMessage(`Failed to save and open prompt: ${error instanceof Error ? error.message : String(error)}`);
+					console.error('Error in requestPromptImprovement:', error);
+					vscode.window.showErrorMessage(`Failed to request prompt improvement: ${error instanceof Error ? error.message : String(error)}`);
 				}
 			}
 			break;
@@ -1367,6 +1458,13 @@ case "humanRelayCancel":
 					vscode.window.showErrorMessage(`Failed to delete prompt: ${error instanceof Error ? error.message : String(error)}`);
 				}
 			}
+			break;
+		}
+		case "navigateToNewProjectForm": {
+			// This message is initiated by a view (e.g., SplashPage in SchedulerView)
+			// and is intended to be caught by App.tsx to trigger navigation.
+			// The extension's webviewMessageHandler just relays it back to the webview.
+			provider.postMessageToWebview({ type: 'navigateToNewProjectForm' });
 			break;
 		}
 		// REMOVED Recorder cases: getNgrokUrl, getRecordingsForProject, playRecording, renameRecording, deleteRecording

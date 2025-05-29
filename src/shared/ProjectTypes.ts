@@ -4,6 +4,7 @@ export interface Project {
   description: string;
   directoryPath: string;  // Associated workspace directory
   color: string;          // CSS color value (e.g., hex, rgba)
+  watchInputDirEnabled?: boolean; // Added for the new toggle
   createdAt: string;      // ISO date string
   updatedAt: string;      // ISO date string
 }
@@ -66,7 +67,10 @@ export interface BaseWatcher {
 export interface Prompt {
   id: string;
   title: string;
-  content: string;
+  description?: string; // Making description part of the core metadata
+  content?: string; // Content will be loaded from filePath, so optional here
+  filePath: string; // Path to the markdown file containing the content
+  currentVersion: number;
   createdAt: string;
   updatedAt: string;
   isArchived: boolean;

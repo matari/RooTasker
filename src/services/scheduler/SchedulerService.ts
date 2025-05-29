@@ -30,8 +30,8 @@ export class SchedulerService {
 
   private constructor(context: vscode.ExtensionContext) {
   	this.context = context; 
-  	this.schedulesFilePath = path.join(getWorkspacePath(), '.rootasker', 'schedules.json');
-  	this.outputChannel = vscode.window.createOutputChannel('RooTasker Scheduler');
+  	this.schedulesFilePath = path.join(getWorkspacePath(), '.rooplus', 'schedules.json');
+  	this.outputChannel = vscode.window.createOutputChannel('Roo+ Scheduler');
     this.promptStorageService = new PromptStorageService(context); // Initialize PromptStorageService
   	this.context.subscriptions.push(this.outputChannel);
   }
@@ -75,7 +75,7 @@ export class SchedulerService {
     this.schedules[scheduleIndex] = updatedSchedule;
     await this.saveSchedules();
     try {
-      await vscode.commands.executeCommand('rootasker.schedulesUpdated');
+      await vscode.commands.executeCommand('rooplus.schedulesUpdated');
     } catch (error) {
       this.log(`Error notifying webview of schedule update: ${error instanceof Error ? error.message : String(error)}`);
     }
@@ -760,7 +760,7 @@ export class SchedulerService {
     }
     this.log(`Programmatically added schedule: "${newSchedule.name}"`);
     try {
-      await vscode.commands.executeCommand('rootasker.schedulesUpdated');
+      await vscode.commands.executeCommand('rooplus.schedulesUpdated');
     } catch (error) {
       this.log(`Error notifying webview of schedule update after programmatic add: ${error instanceof Error ? error.message : String(error)}`);
     }
@@ -795,7 +795,7 @@ export class SchedulerService {
     this.log(`Duplicated schedule "${sourceSchedule.name}" to "${newSchedule.name}"`);
     
     try {
-      await vscode.commands.executeCommand('rootasker.schedulesUpdated');
+      await vscode.commands.executeCommand('rooplus.schedulesUpdated');
     } catch (error) {
       this.log(`Error notifying webview of schedule update after duplication: ${error instanceof Error ? error.message : String(error)}`);
     }
@@ -822,7 +822,7 @@ export class SchedulerService {
     await this.saveSchedules();
     this.log(`Programmatically deleted schedule: "${scheduleName}" (ID: ${scheduleId})`);
     try {
-      await vscode.commands.executeCommand('rootasker.schedulesUpdated');
+      await vscode.commands.executeCommand('rooplus.schedulesUpdated');
     } catch (error) {
       this.log(`Error notifying webview of schedule update after programmatic delete: ${error instanceof Error ? error.message : String(error)}`);
     }

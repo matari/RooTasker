@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import type { Project } from '../../../../src/shared/ProjectTypes';
 import { Button } from '../ui/button';
+import Checkbox from '../ui/checkbox'; // Default import
+// Removed Label import as it's not available and native label is used
 import { vscode } from '../../utils/vscode'; // Added import
 import { useEvent } from 'react-use'; // Added import
 import { Input } from '../ui/input';
@@ -13,6 +15,7 @@ interface ProjectFormData {
   description: string;
   directoryPath: string;
   color: string;
+  watchInputDirEnabled: boolean;
 }
 
 interface ProjectFormProps {
@@ -28,6 +31,7 @@ const ProjectForm: React.FC<ProjectFormProps> = ({ isOpen, onClose, project, onS
     description: '',
     directoryPath: '',
     color: '#4A90E2', // Default color
+    watchInputDirEnabled: false,
   });
 
   useEffect(() => {
@@ -37,6 +41,7 @@ const ProjectForm: React.FC<ProjectFormProps> = ({ isOpen, onClose, project, onS
         description: project.description,
         directoryPath: project.directoryPath,
         color: project.color,
+        watchInputDirEnabled: project.watchInputDirEnabled ?? false,
       });
     } else {
       // Reset for new project form
@@ -45,6 +50,7 @@ const ProjectForm: React.FC<ProjectFormProps> = ({ isOpen, onClose, project, onS
         description: '',
         directoryPath: '',
         color: '#4A90E2',
+        watchInputDirEnabled: false,
       });
     }
   }, [project, isOpen]); // Depend on isOpen to reset form when re-opened for new
@@ -149,6 +155,24 @@ const ProjectForm: React.FC<ProjectFormProps> = ({ isOpen, onClose, project, onS
                 placeholder="#RRGGBB"
               />
             </div>
+          </div>
+          <div className="flex items-center space-x-2 pt-2">
+            <Checkbox
+              id="watchInputDirEnabled"
+              checked={formData.watchInputDirEnabled}
+              onChange={(checked: boolean) => // Explicitly type 'checked'
+                setFormData((prev) => ({
+                  ...prev,
+                  watchInputDirEnabled: checked,
+                }))
+              }
+            />
+            <label // Use native label element
+              htmlFor="watchInputDirEnabled"
+              className="text-sm font-medium text-vscode-settings-headerForeground cursor-pointer"
+            >
+              Automatically watch project input directory
+            </label>
           </div>
           <DialogFooter>
             <DialogClose asChild>

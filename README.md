@@ -1,15 +1,15 @@
 <div align="center">
-  <img src="assets/icons/scheduler-icon.png" alt="RooTasker Icon" width="150" />
+  <img src="assets/icons/RooPlus_dark.png" alt="Roo+ Icon" width="150" />
 </div>
 
 <div align="center">
-<h1>RooTasker</h1>
+<h1>Roo+</h1>
 
-<a href="https://marketplace.visualstudio.com/items?itemName=MrMatari.rootasker" target="_blank"><img src="https://img.shields.io/badge/Download%20on%20VS%20Marketplace-blue?style=for-the-badge&logo=visualstudiocode&logoColor=white" alt="Download on VS Marketplace"></a>
+<a href="https://marketplace.visualstudio.com/items?itemName=MrMatari.rooplus" target="_blank"><img src="https://img.shields.io/badge/Download%20on%20VS%20Marketplace-blue?style=for-the-badge&logo=visualstudiocode&logoColor=white" alt="Download on VS Marketplace"></a>
 
 </div>
 
-**RooTasker** is a powerful task automation extension for VS Code that seamlessly integrates with [Roo Code](https://roocode.com/). It provides both advanced task scheduling and intelligent file watching capabilities to streamline your development workflow.
+**Roo+** is a powerful task automation extension for VS Code that seamlessly integrates with [Roo Code](https://roocode.com/). It provides both advanced task scheduling and intelligent file watching capabilities to streamline your development workflow.
 
 ## Key Features
 
@@ -45,7 +45,7 @@ Fine-tune how tasks interact with your workflow:
 
 ### 📝 Prompt Management
 
-Create, manage, and run reusable prompts directly within RooTasker:
+Create, manage, and run reusable prompts directly within Roo+:
 
 - **Centralized Prompt Library**: Store and organize your frequently used prompts.
 - **Easy Editing**: Edit prompt titles, content, and tags.
@@ -56,62 +56,62 @@ Create, manage, and run reusable prompts directly within RooTasker:
 
 ### 🔌 Seamless Roo Code Integration
 
-RooTasker exposes a comprehensive API via VS Code commands, allowing deep integration with [Roo Code](https://roocode.com/) and other extensions to:
+Roo+ exposes a comprehensive API via VS Code commands, allowing deep integration with [Roo Code](https://roocode.com/) and other extensions to:
 
 - Programmatically manage projects, schedules, and watchers.
 - Trigger Roo Code tasks with custom instructions as part of an automated workflow.
-- Query RooTasker for information about its configuration and status.
+- Query Roo+ for information about its configuration and status.
 
 ### 🤖 Programmatic and AI Assistant Access
 
-RooTasker's functionalities can be controlled programmatically through its VS Code command API. This allows:
+Roo+'s functionalities can be controlled programmatically through its VS Code command API. This allows:
 
 - Integration with other VS Code extensions.
-- Scripting of RooTasker actions from external tools or build processes.
+- Scripting of Roo+ actions from external tools or build processes.
 - Control by AI assistants (like Roo Code) that are capable of executing VS Code commands. All features such as managing schedules, watchers, projects, and triggering tasks are available via this API.
 
 ## Programmatic API Access
 
-RooTasker's full functionality is available programmatically via VS Code's command API (`vscode.commands.executeCommand`). This allows for powerful integrations and scripting capabilities.
+Roo+'s full functionality is available programmatically via VS Code's command API (`vscode.commands.executeCommand`). This allows for powerful integrations and scripting capabilities.
 
-The available commands and their expected parameters are defined by the `RooTaskerAPI` TypeScript interface, located in the `src/api/RooTaskerAPI.ts` file within the extension's source code. This interface serves as the contract for interacting with RooTasker.
+The available commands and their expected parameters are defined by the `RooPlusAPI` TypeScript interface, located in the `src/api/RooPlusAPI.ts` file within the extension's source code. This interface serves as the contract for interacting with Roo+.
 
 **Example: Creating a Project via the API**
 
-Here's how another VS Code extension or an external script (that can interface with VS Code commands) could create a new RooTasker project:
+Here's how another VS Code extension or an external script (that can interface with VS Code commands) could create a new Roo+ project:
 
 ```typescript
 // Ensure vscode module is available in your context
 // const vscode = require('vscode'); 
 
-async function createRooTaskerProject() {
+async function createRooPlusProject() {
   try {
-    const projectDetails = await vscode.commands.executeCommand('rootasker.api.createProject', {
+    const projectDetails = await vscode.commands.executeCommand('rooplus.api.createProject', {
       name: "My Automated Project",
-      description: "A project managed via RooTasker's command API",
+      description: "A project managed via Roo+'s command API",
       directoryPath: "/path/to/your/project/folder", // Optional: provide a relevant path
       color: "#3498DB" // Optional: specify a color
     });
 
     if (projectDetails && projectDetails.success && projectDetails.project) {
-      console.log("RooTasker Project created successfully:", projectDetails.project);
+      console.log("Roo+ Project created successfully:", projectDetails.project);
     } else {
-      console.error("Failed to create RooTasker project:", projectDetails?.error || "Unknown error");
+      console.error("Failed to create Roo+ project:", projectDetails?.error || "Unknown error");
     }
   } catch (error) {
-    console.error("Error executing RooTasker command:", error);
+    console.error("Error executing Roo+ command:", error);
   }
 }
 
-// createRooTaskerProject();
+// createRooPlusProject();
 ```
 
-Refer to the `RooTaskerAPI` interface in `src/api/RooTaskerAPI.ts` for a complete list of commands and their data structures for projects, schedules, and watchers.
+Refer to the `RooPlusAPI` interface in `src/api/RooPlusAPI.ts` for a complete list of commands and their data structures for projects, schedules, and watchers.
 
 ### Troubleshooting
 
-- **Command Not Found**: Ensure the RooTasker extension is installed and activated in VS Code.
-- **Incorrect Parameters**: Refer to the `RooTaskerAPI` interface and the JSDoc comments in `src/extension.ts` for the correct parameters and types for each command.
+- **Command Not Found**: Ensure the Roo+ extension is installed and activated in VS Code.
+- **Incorrect Parameters**: Refer to the `RooPlusAPI` interface and the JSDoc comments in `src/extension.ts` for the correct parameters and types for each command.
 
 ## Use Cases
 
@@ -125,7 +125,7 @@ Refer to the `RooTaskerAPI` interface in `src/api/RooTaskerAPI.ts` for a complet
 
 ## Usage Tips
 
-- RooTasker will run tasks if your screen is locked, but cannot wake up your computer
+- Roo+ will run tasks if your screen is locked, but cannot wake up your computer
 - When VS Code starts or wakes up, any pending tasks will execute
 - For one-time and interval tasks with specific start times, next execution times are calculated from the scheduled time (e.g., 10:00am, 11:00am) regardless of when the previous task actually ran
 - For interval tasks without specific start times, next execution times are calculated from the previous execution time
@@ -133,7 +133,7 @@ Refer to the `RooTaskerAPI` interface in `src/api/RooTaskerAPI.ts` for a complet
 
 ## Getting Started
 
-1. Open the RooTasker panel in VS Code's activity bar
+1. Open the Roo+ panel in VS Code's activity bar
 2. Switch between the "Scheduled Tasks" and "Watchers" tabs
 3. Click "Add Schedule" or "Add Watcher" to create new automations
 4. Configure your automation parameters and save
@@ -145,8 +145,8 @@ This project was originally forked from [kyle-apex/roo-scheduler](https://github
 
 ## License
 
-[Apache 2.0 © 2025 RooTasker](./LICENSE)
+[Apache 2.0 © 2025 Roo+](./LICENSE)
 
 ---
 
-*RooTasker is maintained independently and is not an official product of the Roo Code team.*
+*Roo+ is maintained independently and is not an official product of the Roo Code team.*

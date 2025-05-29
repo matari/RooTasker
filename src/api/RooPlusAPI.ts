@@ -1,5 +1,5 @@
 import { Project, BaseSchedule, BaseWatcher } from '../shared/ProjectTypes';
-// import { RooTaskerMcpServerSimple } from '../mcp_server/RooTaskerMcpServerSimple'; // MCP Server REMOVED
+// import { RooPlusMcpServerSimple } from '../mcp_server/RooPlusMcpServerSimple'; // MCP Server REMOVED
 import { Schedule } from '../services/scheduler/SchedulerService'; // For full Schedule type if needed by create/update
 
 // --- Generic Command Result ---
@@ -59,8 +59,17 @@ export type GetProjectWatchersResult = CommandResult<{ watchers: BaseWatcher[] }
 // Assuming Prompt is defined in '../shared/ProjectTypes'
 import { Prompt } from '../shared/ProjectTypes';
 
-export type CreatePromptData = Omit<Prompt, 'id' | 'createdAt' | 'updatedAt' | 'isArchived'>;
-export type UpdatePromptData = Partial<Omit<Prompt, 'id' | 'createdAt'>>; // Allow updating isArchived and tags
+// CreatePromptData should define the fields necessary to create a new prompt.
+// filePath and currentVersion will be handled by the storage service.
+export type CreatePromptData = {
+  title: string;
+  description?: string;
+  content: string; // Content is mandatory for creation
+  tags?: string[];
+};
+// UpdatePromptData allows partial updates. Content is optional; if provided, it implies content change.
+// filePath and currentVersion are managed by storage service during update if content changes.
+export type UpdatePromptData = Partial<Omit<Prompt, 'id' | 'createdAt' | 'filePath' | 'currentVersion'>>;
 
 export type PromptResult = CommandResult<Prompt>;
 export type ListPromptsResult = CommandResult<{ prompts: Prompt[] }>;
@@ -73,7 +82,7 @@ export type ArchivePromptResult = CommandResult<{ prompt?: Prompt }>; // Returns
 // export type PromptUsageResult = CommandResult<{ schedules: string[], watchers: string[] }>;
 
 
-export interface RooTaskerAPI {
+export interface RooPlusAPI {
   // Project methods
   createProject(data: CreateProjectData): Promise<ProjectResult>;
   listProjects(): Promise<ListProjectsResult>;
@@ -110,5 +119,5 @@ export interface RooTaskerAPI {
   // getPromptUsage(promptId: string): Promise<PromptUsageResult>; // If implemented
 
   // MCP Server access // MCP Server REMOVED
-  // getMcpServer(): RooTaskerMcpServerSimple; // MCP Server REMOVED
+  // getMcpServer(): RooPlusMcpServerSimple; // MCP Server REMOVED
 }

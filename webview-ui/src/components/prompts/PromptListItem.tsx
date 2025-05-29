@@ -80,9 +80,9 @@ const PromptListItem: React.FC<PromptListItemProps> = ({
           <div className="flex justify-between items-center mb-2">
             <div className="flex items-center min-w-0 flex-grow">
               <span 
-                className={`codicon ${getPromptIcon(prompt)} mr-2 text-vscode-descriptionForeground flex-shrink-0`} 
+                className={`codicon ${getPromptIcon(prompt)} mr-2 flex-shrink-0`} 
                 title="Prompt type"
-              />
+              /> {/* Removed text-vscode-descriptionForeground */}
               <span className="text-vscode-foreground font-medium text-base truncate" title={prompt.title}>
                 {prompt.title}
               </span>

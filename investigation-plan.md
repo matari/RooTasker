@@ -12,7 +12,7 @@ DEBUG: UPDATED VERSION - Received projectData: {}
 DEBUG: Project data with defaults: {
   "name": "Unnamed Project", 
   "description": "",
-  "directoryPath": "c:\\Users\\matar\\Desktop\\_dev\\RooTasker",
+  "directoryPath": "c:\\Users\\matar\\Desktop\\_dev\\RooPlus",
   "color": "#d9edf2"
 }
 ```
@@ -40,7 +40,7 @@ async handler(args: any): Promise<CallToolResult> {
 - Tool registration binding might be incorrect
 
 ### 2. Tool Registration Issue
-In `RooTaskerMcpServer.ts`:
+In `RooPlusMcpServer.ts`:
 ```typescript
 mcpServer.tool(tool.name, tool.inputSchema as any, tool.handler.bind(tool));
 ```
@@ -92,7 +92,7 @@ After investigation, we should:
 ## Files to Modify
 - `src/mcp_server/tools/CreateProjectTool.ts` - Enhanced debugging
 - `src/mcp_server/tools/createScheduleTool.ts` - Fix argument handling  
-- `src/mcp_server/RooTaskerMcpServer.ts` - Verify registration
+- `src/mcp_server/RooPlusMcpServer.ts` - Verify registration
 - Other MCP tools as needed
 
 ## Success Criteria

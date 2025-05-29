@@ -75,6 +75,8 @@ export interface ExtensionMessage {
 		| "promptsUpdated"   // Added for Prompts
 		| "setProjects" // For sending project list to webview
 		| "setPrompts" // Added for Prompts: Extension to Webview
+		| "setEditingPromptWithContent" // Added for populating form with full prompt content
+		| "navigateToNewProjectForm" // For webview-to-webview navigation via extension
 		// REMOVED Recorder specific messages: "setNgrokUrl", "setRecordingsForProject", "recordingOperationStatus", "audioFileUrl"
 	text?: string
 	action?:

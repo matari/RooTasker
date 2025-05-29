@@ -20,24 +20,26 @@ import "./utils/path" // Necessary to have access to String.prototype.toPosix.
 import { initializeI18n } from "./i18n"
 import { CodeActionProvider } from "./core/CodeActionProvider"
 import { migrateSettings } from "./utils/migrateSettings"
+import { migrateFromRooTasker } from "./utils/migrateFromRooTasker"
 import { formatLanguage } from "./shared/language"
 import { ClineProvider } from "./core/webview/ClineProvider"
 import { CustomModesManager } from "./core/config/CustomModesManager" // Added
 import { getAllModes } from "./shared/modes" // Added
 import { Schedule } from "./services/scheduler/SchedulerService"
+import { Prompt, BaseWatcher } from "./shared/ProjectTypes" // Added Prompt and BaseWatcher import
 import { RooService } from "./services/scheduler/RooService"
 import { WatcherService } from "./services/watchers/WatcherService"
 import { ProjectStorageService } from "./core/storage/ProjectStorageService" 
 import { PromptStorageService } from "./core/storage/PromptStorageService"; // Added for Prompts
 // import { VoiceRecorderServer } from "./recorder_server/main"; // REMOVED for Voice Recorder
-// import { RooTaskerMcpServerSimple } from "./mcp_server/RooTaskerMcpServerSimple" // MCP Server REMOVED
+// import { RooPlusMcpServerSimple } from "./mcp_server/RooPlusMcpServerSimple" // MCP Server REMOVED
 import {
-	RooTaskerAPI,
+	RooPlusAPI,
 	CreateProjectData, ProjectResult, ListProjectsResult, GetProjectResult, UpdateProjectData, UpdateProjectResult, DeleteProjectResult,
 	CreateScheduleData, ScheduleResult, ListSchedulesResult, GetScheduleResult, UpdateScheduleData, UpdateScheduleResult, DeleteScheduleResult, ToggleScheduleResult, RunScheduleResult, GetProjectSchedulesResult,
 	CreateWatcherData, WatcherResult, ListWatchersResult, UpdateWatcherData, UpdateWatcherResult, DeleteWatcherResult, ToggleWatcherResult, GetProjectWatchersResult,
 	CreatePromptData, PromptResult, ListPromptsResult, GetPromptResult, UpdatePromptData, UpdatePromptResult, DeletePromptResult, ArchivePromptResult // Added for Prompts
-} from "./api/RooTaskerAPI";
+} from "./api/RooPlusAPI";
 
 /**
  * Built using https://github.com/microsoft/vscode-webview-ui-toolkit
@@ -53,19 +55,32 @@ let extensionContext: vscode.ExtensionContext
 
 // This method is called when your extension is activated.
 // Your extension is activated the very first time the command is executed.
-export async function activate(context: vscode.ExtensionContext): Promise<RooTaskerAPI> {
+export async function activate(context: vscode.ExtensionContext): Promise<RooPlusAPI> {
 	extensionContext = context
-	outputChannel = vscode.window.createOutputChannel("RooTasker")
+	outputChannel = vscode.window.createOutputChannel("Roo+")
 	context.subscriptions.push(outputChannel)
-	outputChannel.appendLine("RooTasker extension activated")
+	outputChannel.appendLine("Roo+ extension activated")
 
 	// Set a custom context variable for development mode
 	// This is used to conditionally show the reload window button
 	const isDevelopmentMode = context.extensionMode === vscode.ExtensionMode.Development
-	await vscode.commands.executeCommand('setContext', 'rooTaskerDevMode', isDevelopmentMode)
+	await vscode.commands.executeCommand('setContext', 'rooPlusDevMode', isDevelopmentMode)
 	
 	// Migrate old settings to new
 	await migrateSettings(context, outputChannel)
+	
+	// Migrate data from RooTasker extension
+	try {
+		outputChannel.appendLine("Attempting to migrate data from RooTasker extension...")
+		const migrationSuccess = await migrateFromRooTasker(context, outputChannel)
+		if (migrationSuccess) {
+			outputChannel.appendLine("Successfully migrated data from RooTasker extension")
+		} else {
+			outputChannel.appendLine("No data migration was needed or RooTasker extension not found")
+		}
+	} catch (err) {
+		outputChannel.appendLine(`Error during RooTasker data migration: ${err instanceof Error ? err.message : String(err)}`)
+	}
 
 	// Initialize the scheduler service
 	const { SchedulerService } = await import('./services/scheduler/SchedulerService')
@@ -86,9 +101,160 @@ export async function activate(context: vscode.ExtensionContext): Promise<RooTas
 	// Initialize PromptStorageService
 	const promptStorageService = new PromptStorageService(context);
 	outputChannel.appendLine("PromptStorageService initialized");
+
+	// Ensure CustomModesManager is available for modeDisplayName lookup
+	const customModesManager = new CustomModesManager(context, async () => {
+		// This callback is for when custom modes change, which might trigger a webview update.
+		// For API commands, we just need to fetch current modes.
+		// If provider instance is needed for this callback, it might need to be passed or accessed differently.
+		// For now, assuming this callback is primarily for webview updates.
+		// This will be properly handled when provider is initialized later.
+	});
+	context.subscriptions.push(customModesManager);
 	
 	// Initialize example prompts if none exist
 	await promptStorageService.initializeExamplePrompts();
+	
+	// Ensure System Prompts (like meta-prompts for watchers) exist
+	const { GlobalFileNames } = await import('./shared/globalFileNames'); // Import here for use
+	const improverMetaPromptContent = `You are an AI assistant specializing in refining prompts. The content of the file being processed is a user's prompt.
+Your task is to improve this prompt for clarity, conciseness, and effectiveness when used with an AI model.
+
+Instructions:
+1. Read the prompt content from the provided file.
+2. Generate an improved version of the prompt.
+3. Create a new file in the '../${GlobalFileNames.promptImprovementProcessedDirName}/' directory (relative to the input file's directory).
+4. The new filename MUST be identical to the input filename.
+5. The new file should contain ONLY the improved prompt text. Do not add any conversational wrappers, explanations, or markdown formatting unless it's part of the improved prompt itself.`;
+
+	await promptStorageService.ensureSystemPrompt(
+		GlobalFileNames.promptImproverMetaPromptId,
+		"System: Prompt Improver Meta-Prompt",
+		"Internal prompt used by Roo+ to instruct AI on how to improve user prompts.",
+		improverMetaPromptContent,
+		["system", "internal", "meta-prompt"]
+	);
+	outputChannel.appendLine("System prompts ensured.");
+
+
+	// Ensure System Project and Internal Watchers are set up
+	try {
+		const systemProject = await projectStorageService.ensureSystemProjectExists();
+		outputChannel.appendLine(`System project ensured: ${systemProject.id}`);
+
+		const { GlobalFileNames } = await import('./shared/globalFileNames');
+		const globalStoragePath = context.globalStorageUri.fsPath;
+		const pendingImprovementDir = path.join(globalStoragePath, GlobalFileNames.systemPipelineDirName, GlobalFileNames.promptImprovementDirName, GlobalFileNames.promptImprovementPendingDirName);
+		
+		// Ensure the pending directory exists (WatcherService might not create it)
+		try {
+			await fs.mkdir(pendingImprovementDir, { recursive: true });
+		} catch (mkdirError) {
+			outputChannel.appendLine(`Error creating pending improvement directory ${pendingImprovementDir}: ${mkdirError}`);
+		}
+
+
+		const promptImproverWatcherName = "Internal Prompt Improver Watcher";
+		const existingSystemWatchers = await projectStorageService.getWatchersForProject(systemProject.id);
+		let promptImproverWatcher = existingSystemWatchers.find(w => w.name === promptImproverWatcherName);
+
+		if (!promptImproverWatcher) {
+			outputChannel.appendLine(`Creating ${promptImproverWatcherName}...`);
+			// Meta-prompt is now stored as a system prompt, use its ID
+			const watcherData: Omit<BaseWatcher, 'id' | 'projectId' | 'createdAt' | 'updatedAt' | 'modeDisplayName'> = { 
+				// projectId is supplied by addWatcherToProject, modeDisplayName is also handled there
+				name: promptImproverWatcherName,
+				directoryPath: pendingImprovementDir,
+				fileTypes: ["*.md"],
+				promptSelectionType: 'saved',
+				savedPromptId: GlobalFileNames.promptImproverMetaPromptId,
+				prompt: '', // Content of prompt, not used if savedPromptId is set
+				mode: "orchestrator", 
+				active: true,
+			};
+			// addWatcherToProject will handle adding modeDisplayName if the mode is found
+			promptImproverWatcher = await projectStorageService.addWatcherToProject(systemProject.id, watcherData);
+			if (promptImproverWatcher) {
+				outputChannel.appendLine(`${promptImproverWatcherName} created with ID: ${promptImproverWatcher.id}`);
+				// WatcherService should pick this up on its initialization or next scan.
+			} else {
+				outputChannel.appendLine(`Failed to create ${promptImproverWatcherName}.`);
+			}
+		} else {
+			outputChannel.appendLine(`${promptImproverWatcherName} already exists with ID: ${promptImproverWatcher.id}. Ensuring path and mode are up-to-date.`);
+			let watcherNeedsUpdate = false;
+			if (promptImproverWatcher.directoryPath !== pendingImprovementDir) {
+				promptImproverWatcher.directoryPath = pendingImprovementDir;
+				watcherNeedsUpdate = true;
+				outputChannel.appendLine(`Scheduled update for directory path for ${promptImproverWatcherName}.`);
+			}
+			if (promptImproverWatcher.mode !== "orchestrator") {
+				promptImproverWatcher.mode = "orchestrator";
+				const availableModes = getAllModes(await customModesManager.getCustomModes());
+				const orchestratorModeConfig = availableModes.find(m => m.slug === "orchestrator");
+				if (orchestratorModeConfig && orchestratorModeConfig.name) {
+					promptImproverWatcher.modeDisplayName = orchestratorModeConfig.name;
+				} else {
+					// This case should ideally not happen for a default mode like "orchestrator"
+					promptImproverWatcher.modeDisplayName = "Orchestrator"; // Fallback
+					outputChannel.appendLine(`Warning: Orchestrator mode configuration not found. Defaulting display name to "Orchestrator" for ${promptImproverWatcherName}.`);
+				}
+				watcherNeedsUpdate = true;
+				outputChannel.appendLine(`Scheduled update for mode to "orchestrator" and display name to "${promptImproverWatcher.modeDisplayName}" for ${promptImproverWatcherName}.`);
+			}
+
+			if (watcherNeedsUpdate) {
+				await projectStorageService.updateWatcherInProject(systemProject.id, promptImproverWatcher);
+				outputChannel.appendLine(`Updated ${promptImproverWatcherName}.`);
+			}
+		}
+
+		// Setup for the "processed" directory watcher (to update original prompt)
+		const processedImprovementDir = path.join(globalStoragePath, GlobalFileNames.systemPipelineDirName, GlobalFileNames.promptImprovementDirName, GlobalFileNames.promptImprovementProcessedDirName);
+		try {
+			await fs.mkdir(processedImprovementDir, { recursive: true });
+		} catch (mkdirError) {
+			outputChannel.appendLine(`Error creating processed improvement directory ${processedImprovementDir}: ${mkdirError}`);
+		}
+		// This watcher will be handled by WatcherService directly.
+		// Its task will be to read the processed file and update the original prompt.
+		
+		const promptProcessorWatcherName = "Internal Prompt Processor Watcher";
+		let promptProcessorWatcher = existingSystemWatchers.find(w => w.name === promptProcessorWatcherName);
+
+		if (!promptProcessorWatcher) {
+			outputChannel.appendLine(`Creating ${promptProcessorWatcherName}...`);
+			// This prompt is a placeholder. The actual logic will be an internal command.
+			const metaPromptForProcessing = `INTERNAL_COMMAND:PROCESS_IMPROVED_PROMPT:[filepath]`; // This is correct
+
+			const watcherDataProcessed: Omit<BaseWatcher, 'id' | 'projectId' | 'createdAt' | 'updatedAt' | 'modeDisplayName'> = {
+				// projectId is supplied by addWatcherToProject, modeDisplayName is also handled there
+				name: promptProcessorWatcherName,
+				directoryPath: processedImprovementDir,
+				fileTypes: ["*.md"],
+				prompt: metaPromptForProcessing, 
+				promptSelectionType: 'custom', // It uses the direct prompt string
+				mode: "internal-command", 
+				active: true,
+			};
+			promptProcessorWatcher = await projectStorageService.addWatcherToProject(systemProject.id, watcherDataProcessed);
+			if (promptProcessorWatcher) {
+				outputChannel.appendLine(`${promptProcessorWatcherName} created with ID: ${promptProcessorWatcher.id}`);
+			} else {
+				outputChannel.appendLine(`Failed to create ${promptProcessorWatcherName}.`);
+			}
+		} else {
+			outputChannel.appendLine(`${promptProcessorWatcherName} already exists with ID: ${promptProcessorWatcher.id}. Ensuring path is up-to-date.`);
+			if (promptProcessorWatcher.directoryPath !== processedImprovementDir) {
+				promptProcessorWatcher.directoryPath = processedImprovementDir;
+				await projectStorageService.updateWatcherInProject(systemProject.id, promptProcessorWatcher);
+				outputChannel.appendLine(`Updated directory path for ${promptProcessorWatcherName}.`);
+			}
+		}
+
+	} catch (systemSetupError) {
+		outputChannel.appendLine(`Error during system project/watcher setup: ${systemSetupError}`);
+	}
 
 	// REMOVED Voice Recorder Server Initialization
 
@@ -106,21 +272,21 @@ export async function activate(context: vscode.ExtensionContext): Promise<RooTas
 	
 	// Register command to reload window (dev only button)
 	context.subscriptions.push(
-		vscode.commands.registerCommand("rootasker.reloadWindowDev", async () => {
+		vscode.commands.registerCommand("rooplus.reloadWindowDev", async () => {
 			await vscode.commands.executeCommand("workbench.action.reloadWindow")
 		})
 	)
 
 	// Register command to open the roo-cline extension (always register)
 	context.subscriptions.push(
-		vscode.commands.registerCommand("rootasker.openRooClineExtension", async () => {
+		vscode.commands.registerCommand("rooplus.openRooClineExtension", async () => {
 			await vscode.commands.executeCommand("workbench.view.extension.roo-cline-ActivityBar")
 		})
 	)
 
 	// Register command to handle schedule updates and notify the webview
 	context.subscriptions.push(
-		vscode.commands.registerCommand("rootasker.schedulesUpdated", async () => {
+		vscode.commands.registerCommand("rooplus.schedulesUpdated", async () => {
 			// This command is called when schedules are updated
 			// Simply trigger a state refresh which will cause the webview to reload its data
 			console.log("Schedules updated sending message to webview")
@@ -174,27 +340,20 @@ export async function activate(context: vscode.ExtensionContext): Promise<RooTas
 	const enableLogging = typeof socketPath === "string"
 
 	// MCP Server REMOVED
-	// const rooTaskerMcpServer = new RooTaskerMcpServerSimple(context);
-	// await rooTaskerMcpServer.start(); 
-	// context.subscriptions.push(rooTaskerMcpServer); 
-	// outputChannel.appendLine("RooTasker SIMPLIFIED MCP Server initialized and started.");
+	// const rooPlusMcpServer = new RooPlusMcpServerSimple(context);
+	// await rooPlusMcpServer.start(); 
+	// context.subscriptions.push(rooPlusMcpServer); 
+	// outputChannel.appendLine("Roo+ SIMPLIFIED MCP Server initialized and started.");
 
 	// Register API commands (can also be used by other extensions or for testing)
-	// Ensure CustomModesManager is available for modeDisplayName lookup
-	const customModesManager = new CustomModesManager(context, async () => {
-		// This callback is for when custom modes change, which might trigger a webview update.
-		// For API commands, we just need to fetch current modes.
-		// If provider instance is needed for this callback, it might need to be passed or accessed differently.
-		// For now, assuming this callback is primarily for webview updates.
-		if (provider) {
-			await provider.postStateToWebview();
-		}
-	});
-	context.subscriptions.push(customModesManager);
+	// customModesManager is already initialized above.
 
+	// The provider will be initialized later, so the callback for customModesManager
+	// needs to be updated once provider is available, or handled such that it checks for provider.
+	// For now, the existing callback structure is fine, as it will be re-assigned or provider will be checked.
 
 	context.subscriptions.push(
-		vscode.commands.registerCommand('rootasker.api.createSchedule', async (scheduleData: Omit<Schedule, 'id' | 'createdAt' | 'updatedAt' | 'modeDisplayName'> & { modeDisplayName?: string }) => {
+		vscode.commands.registerCommand('rooplus.api.createSchedule', async (scheduleData: Omit<Schedule, 'id' | 'createdAt' | 'updatedAt' | 'modeDisplayName'> & { modeDisplayName?: string }) => {
 			try {
 				// schedulerService is already defined in the activate scope
         		const availableModes = getAllModes(await customModesManager.getCustomModes());
@@ -208,14 +367,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<RooTas
 				const newSchedule = await schedulerService.addScheduleProgrammatic(fullScheduleData as Omit<Schedule, 'id' | 'createdAt' | 'updatedAt'>);
 				return { success: true, schedule: newSchedule };
 			} catch (error) {
-				outputChannel.appendLine(`Error in rootasker.api.createSchedule: ${error instanceof Error ? error.message : String(error)}`);
+				outputChannel.appendLine(`Error in rooplus.api.createSchedule: ${error instanceof Error ? error.message : String(error)}`);
 				return { success: false, error: error instanceof Error ? error.message : String(error) };
 			}
 		})
 	);
 
 	context.subscriptions.push(
-		vscode.commands.registerCommand('rootasker.api.updateSchedule', async (args: { scheduleId: string, updates: Partial<Omit<Schedule, 'id' | 'createdAt' | 'updatedAt' | 'modeDisplayName'>> & { mode?: string, modeDisplayName?: string } }) => {
+		vscode.commands.registerCommand('rooplus.api.updateSchedule', async (args: { scheduleId: string, updates: Partial<Omit<Schedule, 'id' | 'createdAt' | 'updatedAt' | 'modeDisplayName'>> & { mode?: string, modeDisplayName?: string } }) => {
 			try {
 				// schedulerService is already defined
 				let finalUpdates = { ...args.updates }; // Clone to avoid modifying input
@@ -228,73 +387,73 @@ export async function activate(context: vscode.ExtensionContext): Promise<RooTas
 				const updatedSchedule = await schedulerService.updateSchedule(args.scheduleId, finalUpdates as Partial<Schedule>);
 				return { success: true, schedule: updatedSchedule };
 			} catch (error) {
-				outputChannel.appendLine(`Error in rootasker.api.updateSchedule: ${error instanceof Error ? error.message : String(error)}`);
+				outputChannel.appendLine(`Error in rooplus.api.updateSchedule: ${error instanceof Error ? error.message : String(error)}`);
 				return { success: false, error: error instanceof Error ? error.message : String(error) };
 			}
 		})
 	);
 
 	context.subscriptions.push(
-		vscode.commands.registerCommand('rootasker.api.deleteSchedule', async (args: { scheduleId: string }) => {
+		vscode.commands.registerCommand('rooplus.api.deleteSchedule', async (args: { scheduleId: string }) => {
 			try {
 				// schedulerService is already defined
 				const success = await schedulerService.deleteScheduleProgrammatic(args.scheduleId);
 				return { success };
 			} catch (error) {
-				outputChannel.appendLine(`Error in rootasker.api.deleteSchedule: ${error instanceof Error ? error.message : String(error)}`);
+				outputChannel.appendLine(`Error in rooplus.api.deleteSchedule: ${error instanceof Error ? error.message : String(error)}`);
 				return { success: false, error: error instanceof Error ? error.message : String(error) };
 			}
 		})
 	);
 
 	context.subscriptions.push(
-		vscode.commands.registerCommand('rootasker.api.toggleScheduleActive', async (args: { scheduleId: string, active: boolean }) => {
+		vscode.commands.registerCommand('rooplus.api.toggleScheduleActive', async (args: { scheduleId: string, active: boolean }) => {
 			try {
 				// schedulerService is already defined
 				await schedulerService.toggleScheduleActive(args.scheduleId, args.active);
 				const updatedSchedule = schedulerService.getScheduleById(args.scheduleId);
 				return { success: true, schedule: updatedSchedule };
 			} catch (error) {
-				outputChannel.appendLine(`Error in rootasker.api.toggleScheduleActive: ${error instanceof Error ? error.message : String(error)}`);
+				outputChannel.appendLine(`Error in rooplus.api.toggleScheduleActive: ${error instanceof Error ? error.message : String(error)}`);
 				return { success: false, error: error instanceof Error ? error.message : String(error) };
 			}
 		})
 	);
 	
 	context.subscriptions.push(
-		vscode.commands.registerCommand('rootasker.api.runScheduleNow', async (args: { scheduleId: string }) => {
+		vscode.commands.registerCommand('rooplus.api.runScheduleNow', async (args: { scheduleId: string }) => {
 			try {
 				// schedulerService is already defined
 				await schedulerService.runScheduleNow(args.scheduleId);
 				return { success: true };
 			} catch (error) {
-				outputChannel.appendLine(`Error in rootasker.api.runScheduleNow: ${error instanceof Error ? error.message : String(error)}`);
+				outputChannel.appendLine(`Error in rooplus.api.runScheduleNow: ${error instanceof Error ? error.message : String(error)}`);
 				return { success: false, error: error instanceof Error ? error.message : String(error) };
 			}
 		})
 	);
 
 	context.subscriptions.push(
-		vscode.commands.registerCommand('rootasker.api.getSchedule', (args: { scheduleId: string }) => {
+		vscode.commands.registerCommand('rooplus.api.getSchedule', (args: { scheduleId: string }) => {
 			try {
 				// schedulerService is already defined
 				const schedule = schedulerService.getScheduleById(args.scheduleId);
 				return { success: true, schedule: schedule };
 			} catch (error) {
-				outputChannel.appendLine(`Error in rootasker.api.getSchedule: ${error instanceof Error ? error.message : String(error)}`);
+				outputChannel.appendLine(`Error in rooplus.api.getSchedule: ${error instanceof Error ? error.message : String(error)}`);
 				return { success: false, error: error instanceof Error ? error.message : String(error) };
 			}
 		})
 	);
 
 	context.subscriptions.push(
-		vscode.commands.registerCommand('rootasker.api.listSchedules', () => {
+		vscode.commands.registerCommand('rooplus.api.listSchedules', () => {
 			try {
 				// schedulerService is already defined
 				const schedules = schedulerService.getAllSchedules();
 				return { success: true, schedules: schedules };
 			} catch (error) {
-				outputChannel.appendLine(`Error in rootasker.api.listSchedules: ${error instanceof Error ? error.message : String(error)}`);
+				outputChannel.appendLine(`Error in rooplus.api.listSchedules: ${error instanceof Error ? error.message : String(error)}`);
 				return { success: false, error: error instanceof Error ? error.message : String(error) };
 			}
 		})
@@ -302,7 +461,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<RooTas
 
 	// Register Project API commands
 	context.subscriptions.push(
-		vscode.commands.registerCommand('rootasker.api.createProject', async (projectData: {
+		vscode.commands.registerCommand('rooplus.api.createProject', async (projectData: {
 			name: string,
 			description?: string,
 			directoryPath?: string,
@@ -340,38 +499,38 @@ export async function activate(context: vscode.ExtensionContext): Promise<RooTas
 				await provider.postMessageToWebview({ type: 'projectsUpdated' }); // This type needs to be added to WebviewMessageType
 				return { success: true, project: newProject };
 			} catch (error) {
-				outputChannel.appendLine(`Error in rootasker.api.createProject: ${error instanceof Error ? error.message : String(error)}`);
+				outputChannel.appendLine(`Error in rooplus.api.createProject: ${error instanceof Error ? error.message : String(error)}`);
 				return { success: false, error: error instanceof Error ? error.message : String(error) };
 			}
 		})
 	);
 
 	context.subscriptions.push(
-		vscode.commands.registerCommand('rootasker.api.getProject', async (args: { projectId: string }) => {
+		vscode.commands.registerCommand('rooplus.api.getProject', async (args: { projectId: string }) => {
 			try {
 				const project = await projectStorageService.getProject(args.projectId);
 				return { success: true, project: project };
 			} catch (error) {
-				outputChannel.appendLine(`Error in rootasker.api.getProject: ${error instanceof Error ? error.message : String(error)}`);
+				outputChannel.appendLine(`Error in rooplus.api.getProject: ${error instanceof Error ? error.message : String(error)}`);
 				return { success: false, error: error instanceof Error ? error.message : String(error) };
 			}
 		})
 	);
 
 	context.subscriptions.push(
-		vscode.commands.registerCommand('rootasker.api.listProjects', async () => {
+		vscode.commands.registerCommand('rooplus.api.listProjects', async () => {
 			try {
 				const projects = await projectStorageService.getProjects();
 				return { success: true, projects: projects };
 			} catch (error) {
-				outputChannel.appendLine(`Error in rootasker.api.listProjects: ${error instanceof Error ? error.message : String(error)}`);
+				outputChannel.appendLine(`Error in rooplus.api.listProjects: ${error instanceof Error ? error.message : String(error)}`);
 				return { success: false, error: error instanceof Error ? error.message : String(error) };
 			}
 		})
 	);
 
 	context.subscriptions.push(
-		vscode.commands.registerCommand('rootasker.api.updateProject', async (args: {
+		vscode.commands.registerCommand('rooplus.api.updateProject', async (args: {
 			projectId: string,
 			updates: { // Use the Project type for updates, but make fields optional
 				name?: string,
@@ -397,14 +556,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<RooTas
 				await provider.postMessageToWebview({ type: 'projectsUpdated' });
 				return { success: true, project: updatedProject };
 			} catch (error) {
-				outputChannel.appendLine(`Error in rootasker.api.updateProject: ${error instanceof Error ? error.message : String(error)}`);
+				outputChannel.appendLine(`Error in rooplus.api.updateProject: ${error instanceof Error ? error.message : String(error)}`);
 				return { success: false, error: error instanceof Error ? error.message : String(error) };
 			}
 		})
 	);
 
 	context.subscriptions.push(
-		vscode.commands.registerCommand('rootasker.api.deleteProject', async (args: { projectId: string }) => {
+		vscode.commands.registerCommand('rooplus.api.deleteProject', async (args: { projectId: string }) => {
 			try {
 				const success = await projectStorageService.deleteProject(args.projectId);
 				if (success) {
@@ -413,14 +572,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<RooTas
 				}
 				return { success };
 			} catch (error) {
-				outputChannel.appendLine(`Error in rootasker.api.deleteProject: ${error instanceof Error ? error.message : String(error)}`);
+				outputChannel.appendLine(`Error in rooplus.api.deleteProject: ${error instanceof Error ? error.message : String(error)}`);
 				return { success: false, error: error instanceof Error ? error.message : String(error) };
 			}
 		})
 	);
 	// Register command to handle project updates and notify the webview (similar to schedulesUpdated)
 	context.subscriptions.push(
-		vscode.commands.registerCommand("rootasker.projectsUpdated", async () => {
+		vscode.commands.registerCommand("rooplus.projectsUpdated", async () => {
 			console.log("Projects updated, sending message to webview");
 			await provider.postMessageToWebview({ type: 'projectsUpdated' });
 		})
@@ -434,7 +593,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<RooTas
 	// From WatcherService: import { Watcher } from '../../../webview-ui/src/components/watchers/types';
 
 	context.subscriptions.push(
-		vscode.commands.registerCommand('rootasker.api.createWatcher', async (watcherData: {
+		vscode.commands.registerCommand('rooplus.api.createWatcher', async (watcherData: {
 			projectId: string; // Watchers are project-specific
 			name: string;
 			directoryPath: string;
@@ -465,26 +624,26 @@ export async function activate(context: vscode.ExtensionContext): Promise<RooTas
 				}
 				return { success: !!newWatcher, watcher: newWatcher };
 			} catch (error) {
-				outputChannel.appendLine(`Error in rootasker.api.createWatcher: ${error instanceof Error ? error.message : String(error)}`);
+				outputChannel.appendLine(`Error in rooplus.api.createWatcher: ${error instanceof Error ? error.message : String(error)}`);
 				return { success: false, error: error instanceof Error ? error.message : String(error) };
 			}
 		})
 	);
 
 	context.subscriptions.push(
-		vscode.commands.registerCommand('rootasker.api.listWatchers', async (args: { projectId: string }) => {
+		vscode.commands.registerCommand('rooplus.api.listWatchers', async (args: { projectId: string }) => {
 			try {
 				const watchers = await projectStorageService.getWatchersForProject(args.projectId);
 				return { success: true, watchers: watchers };
 			} catch (error) {
-				outputChannel.appendLine(`Error in rootasker.api.listWatchers: ${error instanceof Error ? error.message : String(error)}`);
+				outputChannel.appendLine(`Error in rooplus.api.listWatchers: ${error instanceof Error ? error.message : String(error)}`);
 				return { success: false, error: error instanceof Error ? error.message : String(error) };
 			}
 		})
 	);
 
 	context.subscriptions.push(
-		vscode.commands.registerCommand('rootasker.api.updateWatcher', async (args: {
+		vscode.commands.registerCommand('rooplus.api.updateWatcher', async (args: {
 			projectId: string;
 			watcherId: string;
 			updates: Partial<{ // Omit id, projectId, createdAt, updatedAt from direct updates
@@ -525,14 +684,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<RooTas
 				}
 				return { success: !!updatedWatcher, watcher: updatedWatcher };
 			} catch (error) {
-				outputChannel.appendLine(`Error in rootasker.api.updateWatcher: ${error instanceof Error ? error.message : String(error)}`);
+				outputChannel.appendLine(`Error in rooplus.api.updateWatcher: ${error instanceof Error ? error.message : String(error)}`);
 				return { success: false, error: error instanceof Error ? error.message : String(error) };
 			}
 		})
 	);
 
 	context.subscriptions.push(
-		vscode.commands.registerCommand('rootasker.api.deleteWatcher', async (args: { projectId: string, watcherId: string }) => {
+		vscode.commands.registerCommand('rooplus.api.deleteWatcher', async (args: { projectId: string, watcherId: string }) => {
 			try {
 				const success = await projectStorageService.deleteWatcherFromProject(args.projectId, args.watcherId);
 				if (success) {
@@ -541,14 +700,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<RooTas
 				}
 				return { success };
 			} catch (error) {
-				outputChannel.appendLine(`Error in rootasker.api.deleteWatcher: ${error instanceof Error ? error.message : String(error)}`);
+				outputChannel.appendLine(`Error in rooplus.api.deleteWatcher: ${error instanceof Error ? error.message : String(error)}`);
 				return { success: false, error: error instanceof Error ? error.message : String(error) };
 			}
 		})
 	);
 	
 	context.subscriptions.push(
-		vscode.commands.registerCommand('rootasker.api.toggleWatcherActive', async (args: { projectId: string, watcherId: string, active: boolean }) => {
+		vscode.commands.registerCommand('rooplus.api.toggleWatcherActive', async (args: { projectId: string, watcherId: string, active: boolean }) => {
 			try {
 				const watchers = await projectStorageService.getWatchersForProject(args.projectId);
 				const watcherToUpdate = watchers.find(w => w.id === args.watcherId);
@@ -565,7 +724,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<RooTas
 				}
 				return { success: !!updatedWatcher, watcher: updatedWatcher };
 			} catch (error) {
-				outputChannel.appendLine(`Error in rootasker.api.toggleWatcherActive: ${error instanceof Error ? error.message : String(error)}`);
+				outputChannel.appendLine(`Error in rooplus.api.toggleWatcherActive: ${error instanceof Error ? error.message : String(error)}`);
 				return { success: false, error: error instanceof Error ? error.message : String(error) };
 			}
 		})
@@ -573,7 +732,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<RooTas
 
 	// Register command to handle watcher updates and notify the webview
 	context.subscriptions.push(
-		vscode.commands.registerCommand("rootasker.watchersUpdated", async () => {
+		vscode.commands.registerCommand("rooplus.watchersUpdated", async () => {
 			console.log("Watchers updated, sending message to webview");
 			await provider.postMessageToWebview({ type: 'watchersUpdated' });
 		})
@@ -581,45 +740,53 @@ export async function activate(context: vscode.ExtensionContext): Promise<RooTas
 
 	// Register Prompt API commands
 	context.subscriptions.push(
-		vscode.commands.registerCommand('rootasker.api.createPrompt', async (promptData: CreatePromptData): Promise<PromptResult> => {
+		vscode.commands.registerCommand('rooplus.api.createPrompt', async (promptData: CreatePromptData): Promise<PromptResult> => {
 			try {
 				const newPrompt = await promptStorageService.addPrompt(promptData);
 				await provider.postMessageToWebview({ type: 'promptsUpdated' }); 
 				return { success: true, data: newPrompt }; // Corrected: data is Prompt
 			} catch (error) {
-				outputChannel.appendLine(`Error in rootasker.api.createPrompt: ${error instanceof Error ? error.message : String(error)}`);
+				outputChannel.appendLine(`Error in rooplus.api.createPrompt: ${error instanceof Error ? error.message : String(error)}`);
 				return { success: false, error: error instanceof Error ? error.message : String(error) };
 			}
 		})
 	);
 
 	context.subscriptions.push(
-		vscode.commands.registerCommand('rootasker.api.listPrompts', async (/* filters?: any */): Promise<ListPromptsResult> => {
+		vscode.commands.registerCommand('rooplus.api.listPrompts', async (/* filters?: any */): Promise<ListPromptsResult> => {
 			try {
-				const prompts = await promptStorageService.getPrompts();
+				const promptsMetadata = await promptStorageService.getPromptsMetadata();
+				const fullPrompts: Prompt[] = [];
+				for (const meta of promptsMetadata) {
+					// getPrompt already fetches content and returns full Prompt object
+					const fullPrompt = await promptStorageService.getPrompt(meta.id);
+					if (fullPrompt) {
+						fullPrompts.push(fullPrompt);
+					}
+				}
 				// TODO: Apply filters if any are passed and implemented
-				return { success: true, data: { prompts } };
+				return { success: true, data: { prompts: fullPrompts } };
 			} catch (error) {
-				outputChannel.appendLine(`Error in rootasker.api.listPrompts: ${error instanceof Error ? error.message : String(error)}`);
+				outputChannel.appendLine(`Error in rooplus.api.listPrompts: ${error instanceof Error ? error.message : String(error)}`);
 				return { success: false, error: error instanceof Error ? error.message : String(error) };
 			}
 		})
 	);
 
 	context.subscriptions.push(
-		vscode.commands.registerCommand('rootasker.api.getPrompt', async (args: { promptId: string }): Promise<GetPromptResult> => {
+		vscode.commands.registerCommand('rooplus.api.getPrompt', async (args: { promptId: string }): Promise<GetPromptResult> => {
 			try {
 				const prompt = await promptStorageService.getPrompt(args.promptId);
 				return { success: true, data: { prompt } }; // Reverted to { prompt: ... }
 			} catch (error) {
-				outputChannel.appendLine(`Error in rootasker.api.getPrompt: ${error instanceof Error ? error.message : String(error)}`);
+				outputChannel.appendLine(`Error in rooplus.api.getPrompt: ${error instanceof Error ? error.message : String(error)}`);
 				return { success: false, error: error instanceof Error ? error.message : String(error) };
 			}
 		})
 	);
 
 	context.subscriptions.push(
-		vscode.commands.registerCommand('rootasker.api.updatePrompt', async (args: { promptId: string, updates: UpdatePromptData }): Promise<UpdatePromptResult> => {
+		vscode.commands.registerCommand('rooplus.api.updatePrompt', async (args: { promptId: string, updates: UpdatePromptData }): Promise<UpdatePromptResult> => {
 			try {
 				const updatedPrompt = await promptStorageService.updatePrompt(args.promptId, args.updates);
 				if (updatedPrompt) {
@@ -627,14 +794,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<RooTas
 				}
 				return { success: !!updatedPrompt, data: { prompt: updatedPrompt } }; // Reverted to { prompt: ... }
 			} catch (error) {
-				outputChannel.appendLine(`Error in rootasker.api.updatePrompt: ${error instanceof Error ? error.message : String(error)}`);
+				outputChannel.appendLine(`Error in rooplus.api.updatePrompt: ${error instanceof Error ? error.message : String(error)}`);
 				return { success: false, error: error instanceof Error ? error.message : String(error) };
 			}
 		})
 	);
 
 	context.subscriptions.push(
-		vscode.commands.registerCommand('rootasker.api.deletePrompt', async (args: { promptId: string }): Promise<DeletePromptResult> => {
+		vscode.commands.registerCommand('rooplus.api.deletePrompt', async (args: { promptId: string }): Promise<DeletePromptResult> => {
 			try {
 				const success = await promptStorageService.deletePrompt(args.promptId);
 				if (success) {
@@ -642,14 +809,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<RooTas
 				}
 				return { success };
 			} catch (error) {
-				outputChannel.appendLine(`Error in rootasker.api.deletePrompt: ${error instanceof Error ? error.message : String(error)}`);
+				outputChannel.appendLine(`Error in rooplus.api.deletePrompt: ${error instanceof Error ? error.message : String(error)}`);
 				return { success: false, error: error instanceof Error ? error.message : String(error) };
 			}
 		})
 	);
 
 	context.subscriptions.push(
-		vscode.commands.registerCommand('rootasker.api.archivePrompt', async (args: { promptId: string, archive: boolean }): Promise<ArchivePromptResult> => {
+		vscode.commands.registerCommand('rooplus.api.archivePrompt', async (args: { promptId: string, archive: boolean }): Promise<ArchivePromptResult> => {
 			try {
 				const updatedPrompt = await promptStorageService.archivePrompt(args.promptId, args.archive);
 				if (updatedPrompt) {
@@ -657,7 +824,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<RooTas
 				}
 				return { success: !!updatedPrompt, data: { prompt: updatedPrompt } }; // Reverted to { prompt: ... }
 			} catch (error) {
-				outputChannel.appendLine(`Error in rootasker.api.archivePrompt: ${error instanceof Error ? error.message : String(error)}`);
+				outputChannel.appendLine(`Error in rooplus.api.archivePrompt: ${error instanceof Error ? error.message : String(error)}`);
 				return { success: false, error: error instanceof Error ? error.message : String(error) };
 			}
 		})
@@ -665,39 +832,89 @@ export async function activate(context: vscode.ExtensionContext): Promise<RooTas
 	
 	// Register command to handle prompt updates and notify the webview
 	context.subscriptions.push(
-		vscode.commands.registerCommand("rootasker.promptsUpdated", async () => {
+		vscode.commands.registerCommand("rooplus.promptsUpdated", async () => {
 			console.log("Prompts updated, sending message to webview");
 			await provider.postMessageToWebview({ type: 'promptsUpdated' });
 		})
 	);
 
+	// Register internal command for processing improved prompts
+	context.subscriptions.push(
+		vscode.commands.registerCommand('rooplus._internal.processImprovedPrompt', async (args: { filePath: string }) => {
+			outputChannel.appendLine(`Internal command: Processing improved prompt file: ${args.filePath}`);
+			try {
+				const { GlobalFileNames } = await import('./shared/globalFileNames');
+				const globalStoragePath = context.globalStorageUri.fsPath;
+				const pendingDir = path.join(globalStoragePath, GlobalFileNames.systemPipelineDirName, GlobalFileNames.promptImprovementDirName, GlobalFileNames.promptImprovementPendingDirName);
+				
+				const fileName = path.basename(args.filePath);
+				// Updated Filename expected format: [promptId]_v[version].improve.md
+				const match = fileName.match(/^([a-f0-9-]+(?:-[a-f0-9]+)*)_v(\d+)\.improve\.md$/);
+				if (!match) {
+					outputChannel.appendLine(`Error: Could not parse promptId and version from filename: ${fileName}. Expected format: [uuid]_v[number].improve.md`);
+					return { success: false, error: "Invalid filename format for processed prompt." };
+				}
+				const promptId = match[1];
+				// const originalVersion = parseInt(match[2], 10); // Original version that was sent for improvement
+
+				const improvedContent = await fs.readFile(args.filePath, 'utf-8');
+
+				// Update the prompt in storage - this will create a new version
+				const updatedPrompt = await promptStorageService.updatePrompt(promptId, { content: improvedContent });
+
+				if (updatedPrompt) {
+					outputChannel.appendLine(`Successfully updated prompt ${promptId} with improved content to version ${updatedPrompt.currentVersion}.`);
+					await provider.postMessageToWebview({ type: 'promptsUpdated' });
+
+					// Clean up files
+					const originalPendingFile = path.join(pendingDir, fileName); // Name in pending was same as in processed
+					try {
+						await fs.unlink(args.filePath); // Delete from processed
+						outputChannel.appendLine(`Deleted processed file: ${args.filePath}`);
+						await fs.unlink(originalPendingFile); // Delete from pending
+						outputChannel.appendLine(`Deleted pending file: ${originalPendingFile}`);
+					} catch (cleanupError) {
+					outputChannel.appendLine(`Error during cleanup of prompt improvement files: ${cleanupError}`);
+					}
+					return { success: true, promptId: updatedPrompt.id, newVersion: updatedPrompt.currentVersion };
+				} else {
+					outputChannel.appendLine(`Error: Failed to update prompt ${promptId} in storage.`);
+					return { success: false, error: "Failed to update prompt in storage." };
+				}
+			} catch (error) {
+				outputChannel.appendLine(`Error in rooplus._internal.processImprovedPrompt: ${error}`);
+				return { success: false, error: error instanceof Error ? error.message : String(error) };
+			}
+		})
+	);
+
 	// Create the API object to be returned
-	const api: RooTaskerAPI = {
+	const api: RooPlusAPI = {
 		createProject: async (data: CreateProjectData): Promise<ProjectResult> => {
-			return await vscode.commands.executeCommand('rootasker.api.createProject', data);
+			return await vscode.commands.executeCommand('rooplus.api.createProject', data);
 		},
 		listProjects: async (): Promise<ListProjectsResult> => {
-			return await vscode.commands.executeCommand('rootasker.api.listProjects');
+			return await vscode.commands.executeCommand('rooplus.api.listProjects');
 		},
 		getProject: async (projectId: string): Promise<GetProjectResult> => {
-			return await vscode.commands.executeCommand('rootasker.api.getProject', { projectId });
+			return await vscode.commands.executeCommand('rooplus.api.getProject', { projectId });
 		},
 		updateProject: async (projectId: string, updates: UpdateProjectData): Promise<UpdateProjectResult> => {
-			return await vscode.commands.executeCommand('rootasker.api.updateProject', { projectId, updates });
+			return await vscode.commands.executeCommand('rooplus.api.updateProject', { projectId, updates });
 		},
 		deleteProject: async (projectId: string): Promise<DeleteProjectResult> => {
-			return await vscode.commands.executeCommand('rootasker.api.deleteProject', { projectId });
+			return await vscode.commands.executeCommand('rooplus.api.deleteProject', { projectId });
 		},
 		getProjectSchedules: async (projectId: string): Promise<GetProjectSchedulesResult> => {
-			// Assuming 'rootasker.api.listSchedules' can take a projectId or we need a new command
+			// Assuming 'rooplus.api.listSchedules' can take a projectId or we need a new command
 			// For now, let's assume listSchedules is global and we filter, or a specific command exists.
-			// The MCP tool GetProjectSchedulesTool calls 'rootasker.api.listSchedules' and filters.
+			// The MCP tool GetProjectSchedulesTool calls 'rooplus.api.listSchedules' and filters.
 			// Let's make a dedicated command for this for a cleaner API.
-			// If 'rootasker.api.listSchedules' is already project-specific, this is fine.
+			// If 'rooplus.api.listSchedules' is already project-specific, this is fine.
 			// Based on current command registration, 'listSchedules' is global.
-			// We should add a new command 'rootasker.api.getProjectSchedules'
+			// We should add a new command 'rooplus.api.getProjectSchedules'
 			// For now, this will mimic the MCP tool's behavior if a direct command isn't available.
-			const allSchedulesResult: ListSchedulesResult = await vscode.commands.executeCommand('rootasker.api.listSchedules');
+			const allSchedulesResult: ListSchedulesResult = await vscode.commands.executeCommand('rooplus.api.listSchedules');
 			if (allSchedulesResult.success && allSchedulesResult.data?.schedules) {
 				const projectSchedules = allSchedulesResult.data.schedules.filter(s => s.projectId === projectId);
 				return { success: true, data: { schedules: projectSchedules } };
@@ -705,60 +922,60 @@ export async function activate(context: vscode.ExtensionContext): Promise<RooTas
 			return { success: false, error: allSchedulesResult.error || "Failed to retrieve project schedules" };
 		},
 		getProjectWatchers: async (projectId: string): Promise<GetProjectWatchersResult> => {
-			return await vscode.commands.executeCommand('rootasker.api.listWatchers', { projectId });
+			return await vscode.commands.executeCommand('rooplus.api.listWatchers', { projectId });
 		},
 		createSchedule: async (data: CreateScheduleData): Promise<ScheduleResult> => {
-			return await vscode.commands.executeCommand('rootasker.api.createSchedule', data);
+			return await vscode.commands.executeCommand('rooplus.api.createSchedule', data);
 		},
 		listSchedules: async (): Promise<ListSchedulesResult> => { // This lists ALL schedules
-			return await vscode.commands.executeCommand('rootasker.api.listSchedules');
+			return await vscode.commands.executeCommand('rooplus.api.listSchedules');
 		},
 		getSchedule: async (scheduleId: string): Promise<GetScheduleResult> => {
-			return await vscode.commands.executeCommand('rootasker.api.getSchedule', { scheduleId });
+			return await vscode.commands.executeCommand('rooplus.api.getSchedule', { scheduleId });
 		},
 		updateSchedule: async (scheduleId: string, updates: UpdateScheduleData): Promise<UpdateScheduleResult> => {
-			return await vscode.commands.executeCommand('rootasker.api.updateSchedule', { scheduleId, updates });
+			return await vscode.commands.executeCommand('rooplus.api.updateSchedule', { scheduleId, updates });
 		},
 		deleteSchedule: async (scheduleId: string): Promise<DeleteScheduleResult> => {
-			return await vscode.commands.executeCommand('rootasker.api.deleteSchedule', { scheduleId });
+			return await vscode.commands.executeCommand('rooplus.api.deleteSchedule', { scheduleId });
 		},
 		toggleScheduleActive: async (scheduleId: string, active: boolean): Promise<ToggleScheduleResult> => {
-			return await vscode.commands.executeCommand('rootasker.api.toggleScheduleActive', { scheduleId, active });
+			return await vscode.commands.executeCommand('rooplus.api.toggleScheduleActive', { scheduleId, active });
 		},
 		runScheduleNow: async (scheduleId: string): Promise<RunScheduleResult> => {
-			return await vscode.commands.executeCommand('rootasker.api.runScheduleNow', { scheduleId });
+			return await vscode.commands.executeCommand('rooplus.api.runScheduleNow', { scheduleId });
 		},
 		createWatcher: async (data: CreateWatcherData): Promise<WatcherResult> => {
-			return await vscode.commands.executeCommand('rootasker.api.createWatcher', data);
+			return await vscode.commands.executeCommand('rooplus.api.createWatcher', data);
 		},
 		updateWatcher: async (projectId: string, watcherId: string, updates: UpdateWatcherData): Promise<UpdateWatcherResult> => {
-			return await vscode.commands.executeCommand('rootasker.api.updateWatcher', { projectId, watcherId, updates });
+			return await vscode.commands.executeCommand('rooplus.api.updateWatcher', { projectId, watcherId, updates });
 		},
 		deleteWatcher: async (projectId: string, watcherId: string): Promise<DeleteWatcherResult> => {
-			return await vscode.commands.executeCommand('rootasker.api.deleteWatcher', { projectId, watcherId });
+			return await vscode.commands.executeCommand('rooplus.api.deleteWatcher', { projectId, watcherId });
 		},
 		toggleWatcherActive: async (projectId: string, watcherId: string, active: boolean): Promise<ToggleWatcherResult> => {
-			return await vscode.commands.executeCommand('rootasker.api.toggleWatcherActive', { projectId, watcherId, active });
+			return await vscode.commands.executeCommand('rooplus.api.toggleWatcherActive', { projectId, watcherId, active });
 		},
 
 		// Prompt methods
 		createPrompt: async (data: CreatePromptData): Promise<PromptResult> => {
-			return await vscode.commands.executeCommand('rootasker.api.createPrompt', data);
+			return await vscode.commands.executeCommand('rooplus.api.createPrompt', data);
 		},
 		listPrompts: async (filters?: any): Promise<ListPromptsResult> => {
-			return await vscode.commands.executeCommand('rootasker.api.listPrompts', filters);
+			return await vscode.commands.executeCommand('rooplus.api.listPrompts', filters);
 		},
 		getPrompt: async (promptId: string): Promise<GetPromptResult> => {
-			return await vscode.commands.executeCommand('rootasker.api.getPrompt', { promptId });
+			return await vscode.commands.executeCommand('rooplus.api.getPrompt', { promptId });
 		},
 		updatePrompt: async (promptId: string, updates: UpdatePromptData): Promise<UpdatePromptResult> => {
-			return await vscode.commands.executeCommand('rootasker.api.updatePrompt', { promptId, updates });
+			return await vscode.commands.executeCommand('rooplus.api.updatePrompt', { promptId, updates });
 		},
 		deletePrompt: async (promptId: string): Promise<DeletePromptResult> => {
-			return await vscode.commands.executeCommand('rootasker.api.deletePrompt', { promptId });
+			return await vscode.commands.executeCommand('rooplus.api.deletePrompt', { promptId });
 		},
 		archivePrompt: async (promptId: string, archive: boolean): Promise<ArchivePromptResult> => {
-			return await vscode.commands.executeCommand('rootasker.api.archivePrompt', { promptId, archive });
+			return await vscode.commands.executeCommand('rooplus.api.archivePrompt', { promptId, archive });
 		},
 		// getPromptUsage: async (promptId: string): Promise<PromptUsageResult> => {
 		//   // TODO: Implement this command
@@ -766,7 +983,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<RooTas
 		// },
 
 		// getMcpServer: () => { // MCP Server REMOVED
-		// 	return rooTaskerMcpServer;
+		// 	return rooPlusMcpServer;
 		// }
 	};
 
@@ -775,7 +992,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<RooTas
 
 // This method is called when your extension is deactivated
 export async function deactivate() {
-	outputChannel.appendLine("RooTasker extension deactivated");
+	outputChannel.appendLine("Roo+ extension deactivated");
 	// REMOVED Voice Recorder Server stop logic
 	// The scheduler service will be automatically cleaned up when the extension is deactivated
 	// as its timers are registered as disposables in the extension context

@@ -48,8 +48,8 @@ export type ClineProviderEvents = {
 }
 
 export class ClineProvider extends EventEmitter<ClineProviderEvents> implements vscode.WebviewViewProvider {
-	public static readonly sideBarId = "rootasker.SidebarProvider" 
-	public static readonly tabPanelId = "rootasker.TabPanelProvider"
+	public static readonly sideBarId = "rooplus.SidebarProvider" 
+	public static readonly tabPanelId = "rooplus.TabPanelProvider"
 	private static activeInstances: Set<ClineProvider> = new Set()
 	private disposables: vscode.Disposable[] = []
 	private view?: vscode.WebviewView | vscode.WebviewPanel
@@ -172,7 +172,7 @@ export class ClineProvider extends EventEmitter<ClineProviderEvents> implements 
 	public static async getInstance(): Promise<ClineProvider | undefined> {
 		let visibleProvider = ClineProvider.getVisibleInstance()
 		if (!visibleProvider) {
-			await vscode.commands.executeCommand("rootasker.SidebarProvider.focus")
+			await vscode.commands.executeCommand("rooplus.SidebarProvider.focus")
 			await delay(100)
 			visibleProvider = ClineProvider.getVisibleInstance()
 		}
@@ -469,7 +469,7 @@ export class ClineProvider extends EventEmitter<ClineProviderEvents> implements 
 					<script nonce="${nonce}">
 						window.IMAGES_BASE_URI = "${imagesUri}"
 					</script>
-					<title>RooTasker</title>
+					<title>Roo+</title>
 				</head>
 				<body>
 					<div id="root"></div>
@@ -499,7 +499,7 @@ export class ClineProvider extends EventEmitter<ClineProviderEvents> implements 
 			<script nonce="${nonce}">
 				window.IMAGES_BASE_URI = "${imagesUri}"
 			</script>
-            <title>RooTasker</title>
+            <title>Roo+</title>
           </head>
           <body>
             <noscript>You need to enable JavaScript to run this app.</noscript>
@@ -597,16 +597,16 @@ export class ClineProvider extends EventEmitter<ClineProviderEvents> implements 
 	async ensureMcpServersDirectoryExists(): Promise<string> {
 		let mcpServersDir: string
 		if (process.platform === "win32") {
-			mcpServersDir = path.join(os.homedir(), "AppData", "Roaming", "RooTasker", "MCP")
+			mcpServersDir = path.join(os.homedir(), "AppData", "Roaming", "RooPlus", "MCP")
 		} else if (process.platform === "darwin") {
-			mcpServersDir = path.join(os.homedir(), "Documents", "RooTasker", "MCP")
+			mcpServersDir = path.join(os.homedir(), "Documents", "RooPlus", "MCP")
 		} else {
-			mcpServersDir = path.join(os.homedir(), ".local", "share", "RooTasker", "MCP")
+			mcpServersDir = path.join(os.homedir(), ".local", "share", "RooPlus", "MCP")
 		}
 		try {
 			await fs.mkdir(mcpServersDir, { recursive: true })
 		} catch (error) {
-			return path.join(os.homedir(), ".rootasker", "mcp")
+			return path.join(os.homedir(), ".rooplus", "mcp")
 		}
 		return mcpServersDir
 	}
@@ -873,12 +873,12 @@ export class ClineProvider extends EventEmitter<ClineProviderEvents> implements 
 		const cwd = this.cwd;
 
 		const webview = this.view?.webview;
-		let rootaskerLiteSvgUri = "";
-		let rootaskerDarkSvgUri = "";
+		let rooPlusLiteSvgUri = "";
+		let rooPlusDarkSvgUri = "";
 
 		if (webview && this.contextProxy.extensionUri) {
-			rootaskerLiteSvgUri = getUri(webview, this.contextProxy.extensionUri, ["assets", "icons", "RooTasker_lite.png"]).toString();
-			rootaskerDarkSvgUri = getUri(webview, this.contextProxy.extensionUri, ["assets", "icons", "RooTasker_dark.png"]).toString();
+			rooPlusLiteSvgUri = getUri(webview, this.contextProxy.extensionUri, ["assets", "icons", "RooPlus_lite.png"]).toString();
+			rooPlusDarkSvgUri = getUri(webview, this.contextProxy.extensionUri, ["assets", "icons", "RooPlus_dark.png"]).toString();
 		}
 
 		return {
@@ -949,8 +949,8 @@ export class ClineProvider extends EventEmitter<ClineProviderEvents> implements 
 			renderContext: this.renderContext,
 			maxReadFileLine: maxReadFileLine ?? 500,
 			settingsImportedAt: this.settingsImportedAt,
-			rootaskerLiteSvgUri,
-			rootaskerDarkSvgUri,
+			rootaskerLiteSvgUri: rooPlusLiteSvgUri,
+			rootaskerDarkSvgUri: rooPlusDarkSvgUri,
 			// Add project data
 			projects,
 			projectSchedules,

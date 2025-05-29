@@ -7,4 +7,13 @@ export const GlobalFileNames = {
 	mcpSettings: "mcp_settings.json",
 	unboundModels: "unbound_models.json",
 	customModes: "custom_modes.json",
+	// System Project and Directories for Internal Pipelines
+	systemProjectId: "@@RooPlusSystemProject",
+	systemPipelineDirName: "system_pipeline",
+	promptImprovementDirName: "prompt_improvement",
+	promptImprovementPendingDirName: "pending",
+	promptImprovementProcessedDirName: "processed",
+	// System Prompt IDs
+	promptImproverMetaPromptId: "@@SystemPrompt_PromptImprover",
+	// Add other system prompt IDs here if needed
 }

@@ -1,6 +1,6 @@
-# Contributing to RooTasker
+# Contributing to Roo+
 
-RooTasker is a VS Code extension for task automation, built as a fork of Roo Code. We welcome contributions that enhance its functionality or fix issues.
+Roo+ is a VS Code extension for task automation, built as a fork of Roo Code. We welcome contributions that enhance its functionality or fix issues.
 
 You'll find the code for this extension primarily in:
 - **Scheduler Components**:

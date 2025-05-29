@@ -104,7 +104,7 @@ const ScheduleSortControl: React.FC<ScheduleSortControlProps> = ({
         <div className="flex items-center">
           <span className="mr-2">Sort by:</span>
           <select
-            className="bg-vscode-dropdown-background text-vscode-dropdown-foreground border border-vscode-dropdown-border rounded px-2 py-1"
+            className="bg-vscode-dropdown-background text-vscode-dropdown-foreground border border-vscode-dropdown-border rounded-lg px-2 h-9 text-xs" // Changed to rounded-lg, h-9, kept text-xs, removed py-1
             value={sortMethod}
             onChange={(e) => setSortMethod(e.target.value as SortMethod)}
             title="Select sort method"
@@ -118,7 +118,7 @@ const ScheduleSortControl: React.FC<ScheduleSortControlProps> = ({
         </div>
         <div className="flex items-center">
           <button
-            className="flex items-center px-2 py-1 rounded hover:bg-vscode-button-hoverBackground"
+            className="flex items-center px-2 rounded-lg hover:bg-vscode-button-hoverBackground h-9 text-xs" // Changed to rounded-lg, h-9, kept text-xs, removed py-1
             onClick={() => setSortDirection(sortDirection === "asc" ? "desc" : "asc")}
             title={`Currently sorted ${sortDirection === "asc" ? "ascending" : "descending"}. Click to toggle.`}
             type="button"

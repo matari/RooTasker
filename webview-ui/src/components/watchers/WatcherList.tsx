@@ -2,11 +2,12 @@ import React from "react";
 import { Virtuoso } from "react-virtuoso";
 import { Watcher } from "./types";
 import WatcherListItem from "./WatcherListItem";
-import type { Project } from "../../../../src/shared/ProjectTypes"; // Import Project type
+import type { Project, Prompt } from "../../../../src/shared/ProjectTypes"; // Import Project and Prompt types
 
 interface WatcherListProps {
   watchers: Watcher[];
-  projects: Project[]; // Add projects prop
+  projects: Project[];
+  prompts: Prompt[]; // Add prompts prop
   onEdit: (id: string) => void;
   onDelete: (id: string) => void;
   onToggleActive: (id: string, active: boolean | undefined) => void;
@@ -17,7 +18,8 @@ interface WatcherListProps {
 
 const WatcherList: React.FC<WatcherListProps> = ({
   watchers,
-  projects, // Add projects prop
+  projects,
+  prompts, // Destructure prompts
   onEdit,
   onDelete,
   onToggleActive,
@@ -45,10 +47,11 @@ const WatcherList: React.FC<WatcherListProps> = ({
             watcher={watcher}
             projectName={project?.name}
             projectColor={project?.color}
+            prompts={prompts} // Pass prompts down
             onEdit={onEdit}
             onDelete={onDelete}
             onToggleActive={onToggleActive}
-            onDuplicate={onDuplicate} // Added
+            onDuplicate={onDuplicate}
             onResumeTask={onResumeTask}
             formatDate={formatDate}
           />
